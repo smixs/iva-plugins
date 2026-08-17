@@ -1,14 +1,18 @@
-// A journal that looks like three real days: chat turns with tools, a memory_search, a
-// planner subagent, a blocked Gate, a failed turn, a night Rollup, a trimmed event, a live
-// turn and two broken lines. Used by the tests and for the screenshots.
+// A journal that looks like fourteen real days — the whole retention window. The three latest
+// days hold every shape a day has: chat turns with tools, a memory_search, a planner subagent,
+// a blocked Gate, a failed turn, a cancelled turn, a live turn, a trimmed event, two broken
+// lines, a digest that sends twice inside one session and a Rollup whose session crosses
+// midnight. The eleven days before them are the quiet background. Used by the tests and for
+// the screenshots.
 //
-//   node fixture.mjs /tmp/iva-data            # writes /tmp/iva-data/trace/*.jsonl
-//   node fixture.mjs /tmp/iva-data --now 2026-08-17T18:40:00
+//   node test/fixture.mjs /tmp/iva-data                   # writes /tmp/iva-data/trace/*.jsonl
+//   node test/fixture.mjs /tmp/iva-data --now 2026-08-17T18:40:00
+//   node test/fixture.mjs /tmp/iva-big --busy 240         # a big journal for a load test
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { traceDir } from "./store.mjs";
+import { traceDir } from "../sh.iva/services/viewer/store.mjs";
 
 const pad = (n) => String(n).padStart(2, "0");
 const dayName = (at) => {
@@ -21,6 +25,9 @@ class Script {
   constructor(files) {
     this.files = files;
     this.at = 0;
+    // What was scripted, in the writer's own words: the tests read the journal back and
+    // compare. Intent on one side, the stitched turn on the other.
+    this.plan = { chat: [], night: [] };
   }
 
   set(at) {
@@ -71,6 +78,67 @@ const usage = (i, o) => ({
   costUsd: Number(((i * 3 + o * 15) / 1_000_000).toFixed(4)),
 });
 
+/** How many cards the planner's own memory_search brings back. */
+const PLANNER_CARDS = 4;
+
+/** How many cards a night turn reads before it starts writing. */
+const NIGHT_CARDS = 6;
+
+const STATUS_OF = {
+  plain: "ok",
+  flagged: "ok",
+  blocked: "blocked",
+  failed: "failed",
+  cancelled: "cancelled",
+  live: "live",
+};
+
+/**
+ * What one scripted chat turn is meant to look like when a reader stitches it back: the key,
+ * the outcome, the tools that were called, the steps that completed, the cards. Derived from
+ * the spec, never from the reader.
+ */
+function planOfChat(spec) {
+  const { chatId = 88123456, messageId, turnId, session, shape = "plain", steps = [] } = spec;
+  const tools = [];
+  let cardsFound = 0;
+  let cardsWritten = 0;
+  let subagents = 0;
+  let stepCount = 0;
+  let toolErrors = 0;
+  for (const step of steps) {
+    stepCount += 1; // every scripted step ends with a step.completed
+    for (const call of step.calls) {
+      tools.push(call.tool);
+      if (call.error !== undefined) toolErrors += 1;
+      else if (call.tool === "memory_search" && typeof call.result?.count === "number")
+        cardsFound += call.result.count;
+      if (call.tool === "write_card") cardsWritten += 1;
+      if (call.tool === "tasks" && call.planner !== undefined) {
+        subagents += 1;
+        tools.push("memory_search"); // the planner searches the Vault itself
+        cardsFound += PLANNER_CARDS;
+        stepCount += 1; // and completes a step of its own
+      }
+    }
+  }
+  if (shape === "plain" || shape === "flagged") stepCount += 1; // the step that answers
+  return {
+    id: `u:tg:${chatId}:${messageId}`,
+    updateKey: `tg:${chatId}:${messageId}`,
+    turnId,
+    session,
+    shape,
+    status: STATUS_OF[shape],
+    tools,
+    toolErrors,
+    subagents,
+    steps: stepCount,
+    cardsFound,
+    cardsWritten,
+  };
+}
+
 const searchResult = (count, files) => ({
   count,
   engine: "fts5+graph",
@@ -81,6 +149,32 @@ const searchResult = (count, files) => ({
     snippet: "…",
   })),
 });
+
+/** What the quiet days are made of: short exchanges, one tool call each. */
+const QUIET = [
+  { ask: "Что сегодня важное?", reply: "Две встречи и релиз плагина. Остальное терпит." },
+  { ask: "Напомни, чем закончился вчерашний спор про рельсы", reply: "Решили ADR-0009: стор в data/custom/plugins." },
+  { ask: "Сколько осталось места на диске?", reply: "68 ГБ свободно, за неделю ушло 4 ГБ." },
+  { ask: "Запиши: вьюер читает журнал, не пишет", reply: "Записал в карточку trace." },
+  { ask: "Что в MOC поменялось за неделю?", reply: "Две новые темы и один разрыв связей." },
+];
+
+const QUIET_CALL = [
+  {
+    tool: "memory_search",
+    args: { query: "что решили" },
+    ms: 340,
+    result: searchResult(2, ["cards/project-iva.md", "daily/2026-08-10.md"]),
+  },
+  { tool: "bash", args: { command: "df -h /" }, ms: 210, result: "68G free" },
+  {
+    tool: "write_card",
+    args: { path: "cards/trace.md", mode: "merge" },
+    ms: 300,
+    result: { ok: true, path: "cards/trace.md", history: 1 },
+  },
+  { tool: "read_file", args: { path: "vault/MOC.md" }, ms: 180, result: "12 тем" },
+];
 
 /**
  * One chat turn, from the update the Bridge accepts to the answer Outbox delivers.
@@ -102,6 +196,7 @@ function chatTurn(script, spec) {
   } = spec;
   const updateKey = `tg:${chatId}:${messageId}`;
   const chatKey = `private:${chatId}`;
+  script.plan.chat.push(planOfChat(spec));
 
   script.emit({
     kind: "bridge",
@@ -464,7 +559,7 @@ function planner(script, { turnId, session, callId, childSessionId, query, outpu
       callId: `${callId}_sub0`,
       toolName: "memory_search",
       isError: false,
-      result: searchResult(4, [
+      result: searchResult(PLANNER_CARDS, [
         "cards/project-iva.md",
         "cards/plugin-rails.md",
         "summaries/2026-W33.md",
@@ -497,12 +592,29 @@ function planner(script, { turnId, session, callId, childSessionId, query, outpu
   });
 }
 
-/** A night turn: no turn key on the seams, only a session and a source. */
-function nightTurn(script, { session, source, cards, summary }) {
+/**
+ * A night turn: the Eve events carry a turnId from the hook, the seams carry none — only a
+ * session and a source. One session can run several turns: the digest sends twice, a Rollup
+ * lives across two nights. `turnId` is what tells them apart.
+ */
+function nightTurn(script, { session, source, cards, summary, turnId = "turn_0" }) {
+  script.plan.night.push({
+    id: `s:${session}|${turnId}`,
+    session,
+    source,
+    turnId,
+    status: "ok",
+    tools: ["memory_search", ...cards.map(() => "write_card")],
+    toolErrors: 0,
+    subagents: 0,
+    cardsWritten: cards.length,
+    cardsFound: NIGHT_CARDS,
+    steps: cards.length + 1,
+  });
   script.emit({
     kind: "eve",
     name: "turn.started",
-    turn: "turn_0",
+    turn: turnId,
     session,
     source: "http",
     data: { sequence: 1, sessionId: session },
@@ -511,7 +623,7 @@ function nightTurn(script, { session, source, cards, summary }) {
   script.emit({
     kind: "eve",
     name: "actions.requested",
-    turn: "turn_0",
+    turn: turnId,
     session,
     source: "http",
     data: {
@@ -525,7 +637,7 @@ function nightTurn(script, { session, source, cards, summary }) {
   script.emit({
     kind: "eve",
     name: "action.result",
-    turn: "turn_0",
+    turn: turnId,
     session,
     source: "http",
     data: {
@@ -535,7 +647,7 @@ function nightTurn(script, { session, source, cards, summary }) {
       callId: `call_${session}_0`,
       toolName: "memory_search",
       isError: false,
-      result: searchResult(6, [
+      result: searchResult(NIGHT_CARDS, [
         "daily/2026-08-16.md",
         "cards/project-iva.md",
         "cards/gauntlet-loop.md",
@@ -549,7 +661,7 @@ function nightTurn(script, { session, source, cards, summary }) {
   script.emit({
     kind: "eve",
     name: "step.completed",
-    turn: "turn_0",
+    turn: turnId,
     session,
     source: "http",
     data: { sequence: 1, stepIndex: 0, finishReason: "tool_calls", usage: usage(21400, 240) },
@@ -559,7 +671,7 @@ function nightTurn(script, { session, source, cards, summary }) {
     script.emit({
       kind: "eve",
       name: "actions.requested",
-      turn: "turn_0",
+      turn: turnId,
       session,
       source: "http",
       data: {
@@ -573,7 +685,7 @@ function nightTurn(script, { session, source, cards, summary }) {
     script.emit({
       kind: "eve",
       name: "action.result",
-      turn: "turn_0",
+      turn: turnId,
       session,
       source: "http",
       data: {
@@ -589,7 +701,7 @@ function nightTurn(script, { session, source, cards, summary }) {
     script.emit({
       kind: "eve",
       name: "step.completed",
-      turn: "turn_0",
+      turn: turnId,
       session,
       source: "http",
       data: {
@@ -604,7 +716,7 @@ function nightTurn(script, { session, source, cards, summary }) {
   script.emit({
     kind: "eve",
     name: "turn.completed",
-    turn: "turn_0",
+    turn: turnId,
     session,
     source: "http",
     data: { sequence: 1 },
@@ -635,10 +747,78 @@ const at = (base, dayBack, hh, mm, ss = 0) => {
   return d.getTime();
 };
 
-/** Three days of journal as day name to lines. Deterministic for a given `now`. */
-export function fixtureFiles(now = Date.now()) {
+/**
+ * Fourteen days of journal — the whole retention window — as day name to lines, plus the plan
+ * of what was scripted. Deterministic for a given `now`. The three latest days are written by
+ * hand, every shape a real day has; the eleven before them are the quiet background that makes
+ * the periods differ, and `busy` adds plain turns on top of each of them for a load test.
+ */
+export function fixtureJournal(now = Date.now(), { busy = 0 } = {}) {
   const files = new Map();
   const script = new Script(files);
+
+  // ── the eleven quiet days before, oldest first ──────────────────────────────────
+  for (let back = 13; back >= 3; back -= 1) {
+    const session = `sess_d${back}`;
+    const day = 13 - back;
+    const turns = 1 + (day % 3);
+    for (let i = 0; i < turns; i += 1) {
+      script.set(at(now, back, 9 + i * 4, 17 + i * 9, (day * 7 + i) % 60));
+      chatTurn(script, {
+        messageId: 4000 + back * 20 + i,
+        turnId: `turn_${i}`,
+        session,
+        text: QUIET[(day + i) % QUIET.length].ask,
+        reply: QUIET[(day + i) % QUIET.length].reply,
+        steps: [
+          {
+            thinkMs: 1100 + i * 300,
+            calls: [QUIET_CALL[(day + i) % QUIET_CALL.length]],
+          },
+        ],
+      });
+    }
+    for (let i = 0; i < busy; i += 1) {
+      script.set(at(now, back, 6 + (i % 16), (i * 3) % 60, (i * 11) % 60));
+      chatTurn(script, {
+        messageId: 60000 + back * 1000 + i,
+        turnId: `turn_${turns + i}`,
+        session,
+        text: `Загрузочный ход ${i} за день ${back}`,
+        reply: `Ответ на загрузочный ход ${i}.`,
+        steps: [{ thinkMs: 800, calls: [QUIET_CALL[i % QUIET_CALL.length]] }],
+      });
+    }
+    // Every other night the Rollup runs; on the night between day 5 and day 4 it keeps one
+    // session across midnight, so its two turns land in two different day files.
+    if (back % 2 === 1)
+      if (back === 5) {
+        script.set(at(now, 5, 23, 51, 30));
+        nightTurn(script, {
+          session: "sess_night_span",
+          source: "rollup",
+          turnId: "turn_0",
+          cards: ["cards/project-iva.md"],
+          summary: "Ночной отчёт: день собран, карточка обновлена.",
+        });
+        script.set(at(now, 4, 0, 7, 12)); // the same session, already the next day file
+        nightTurn(script, {
+          session: "sess_night_span",
+          source: "rollup",
+          turnId: "turn_1",
+          cards: ["cards/plugin-rails.md", "cards/trace.md"],
+          summary: "Ночной отчёт, вторая часть: недельное саммари пересобрано.",
+        });
+      } else {
+        script.set(at(now, back, 23, 20, 0));
+        nightTurn(script, {
+          session: `sess_night_d${back}`,
+          source: "rollup",
+          cards: ["cards/project-iva.md"],
+          summary: `Ночной отчёт: 1 карточка, день ${back} закрыт.`,
+        });
+      }
+  }
 
   // ── two days ago ────────────────────────────────────────────────────────────────
   script.set(at(now, 2, 9, 41, 12));
@@ -819,12 +999,23 @@ export function fixtureFiles(now = Date.now()) {
   });
 
   // ── today ───────────────────────────────────────────────────────────────────────
+  // The digest sends twice inside one session: two turns, one session, both keyless on the
+  // seams. Grouping by session alone would fuse them into one turn.
   script.set(at(now, 0, 7, 5, 40));
   nightTurn(script, {
     session: "sess_night_c",
     source: "digest",
+    turnId: "turn_0",
     cards: ["cards/project-iva.md"],
     summary: "Утренний дайджест: 4 хода за ночь, 1 алерт brain, план на день собран.",
+  });
+  script.set(at(now, 0, 7, 9, 30));
+  nightTurn(script, {
+    session: "sess_night_c",
+    source: "digest",
+    turnId: "turn_1",
+    cards: ["cards/serge-shima.md"],
+    summary: "Дайджест, вторая часть: что просрочено и что просят решить сегодня.",
   });
   script.set(at(now, 0, 9, 30, 11));
   chatTurn(script, {
@@ -944,15 +1135,22 @@ export function fixtureFiles(now = Date.now()) {
     ],
   });
 
-  for (const [day, lines] of files) files.set(day, lines);
-  return files;
+  return { files, plan: script.plan };
 }
 
+/** The journal alone, as day name to lines. */
+export const fixtureFiles = (now = Date.now(), options = {}) =>
+  fixtureJournal(now, options).files;
+
+/** What the fixture scripted: the turns a reader must find, in the writer's own words. */
+export const fixturePlan = (now = Date.now(), options = {}) =>
+  fixtureJournal(now, options).plan;
+
 /** Writes the fixture into `<dataDir>/trace/`. Returns the files it wrote. */
-export function writeFixture(dataDir, now = Date.now()) {
+export function writeFixture(dataDir, now = Date.now(), options = {}) {
   const dir = traceDir(dataDir);
   mkdirSync(dir, { recursive: true });
-  const files = fixtureFiles(now);
+  const files = fixtureFiles(now, options);
   const written = [];
   for (const [day, lines] of files) {
     const path = join(dir, `${day}.jsonl`);
@@ -965,12 +1163,14 @@ export function writeFixture(dataDir, now = Date.now()) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const target = process.argv[2];
   if (target === undefined) {
-    process.stderr.write("usage: node fixture.mjs <dataDir> [--now ISO]\n");
+    process.stderr.write("usage: node fixture.mjs <dataDir> [--now ISO] [--busy N]\n");
     process.exit(2);
   }
   const flag = process.argv.indexOf("--now");
   const now = flag > 0 ? Date.parse(process.argv[flag + 1]) : Date.now();
-  const { dir, files } = writeFixture(target, now);
+  const load = process.argv.indexOf("--busy");
+  const busy = load > 0 ? Number(process.argv[load + 1]) : 0;
+  const { dir, files } = writeFixture(target, now, { busy });
   process.stdout.write(`fixture in ${dir}\n`);
   for (const file of files) process.stdout.write(`  ${file.path} — ${file.lines} lines\n`);
 }

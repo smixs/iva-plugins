@@ -97,6 +97,26 @@ export class Store {
     return events;
   }
 
+  /**
+   * Fingerprint of the whole window: which day files it holds and the size and mtime of each.
+   * A reader that stitched the window can hold on to its work while this string stays equal —
+   * an appended line moves size, a rewritten file moves mtime, a pruned day leaves the list.
+   * Taken before reading, so a file that grows during the read gets a new fingerprint next time.
+   */
+  stamp() {
+    const parts = [];
+    for (const day of this.window()) {
+      let info;
+      try {
+        info = statSync(this.path(day));
+      } catch {
+        continue;
+      }
+      parts.push(`${day}:${info.size}:${info.mtimeMs}`);
+    }
+    return parts.join(",");
+  }
+
   /** Every event of the retention window, unsorted (the stitcher sorts). */
   events() {
     const all = [];

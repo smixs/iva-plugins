@@ -17,7 +17,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store, Tail, listDays, currentDay, dayOf, traceDir } from "./store.mjs";
+import { Store, Tail, listDays, currentDay, dayOf, traceDir } from "../sh.iva/services/viewer/store.mjs";
 import { writeFixture } from "./fixture.mjs";
 
 const NOW = Date.parse("2026-08-17T12:00:00Z");
@@ -215,6 +215,36 @@ test("a file that shrank is re-read from the start instead of read as garbage", 
     const events = tail.poll().events;
     assert.equal(events.length, 1);
     assert.equal(events[0].event, "outbox.delivered");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the fingerprint of the window moves only when a day file moves", () => {
+  const dir = sandbox();
+  try {
+    const at = traceDir(dir);
+    const path = join(at, `${TODAY}.jsonl`);
+    writeFileSync(path, line(NOW, "bridge", "admitted"));
+    const store = new Store({ dataDir: dir, now: () => NOW });
+    const first = store.stamp();
+    assert.notEqual(first, "");
+    assert.equal(store.stamp(), first); // reading changes nothing
+    store.events();
+    assert.equal(store.stamp(), first);
+
+    appendFileSync(path, line(NOW + 5, "inbound", "received")); // the file grew
+    const second = store.stamp();
+    assert.notEqual(second, first);
+
+    writeFileSync(join(at, "2026-08-16.jsonl"), line(NOW - 86400000, "eve", "turn.started"));
+    assert.notEqual(store.stamp(), second); // a day file appeared
+
+    // a file outside the window is not part of the fingerprint
+    const third = store.stamp();
+    writeFileSync(join(at, "2026-01-01.jsonl"), line(NOW, "eve", "turn.started"));
+    assert.equal(store.stamp(), third);
+    assert.equal(new Store({ dataDir: join(dir, "nowhere"), now: () => NOW }).stamp(), "");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

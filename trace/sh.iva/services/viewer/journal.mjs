@@ -258,8 +258,12 @@ function cap(text, limit) {
 
 /**
  * The three key spaces of `turn` (contract): the update key before the turn, the Eve turnId
- * after it, nothing at all for a night turn. `turn.bound` welds the first two; a night turn
- * is held together by its session.
+ * after it, nothing at all on the night seams. `turn.bound` welds the first two.
+ *
+ * One session can hold several turns — the digest sends twice inside one session, a Rollup
+ * keeps its session alive across two nights — so the session alone is never a turn key, and
+ * neither is the pair (session, source). A keyless seam line joins the latest turn of its
+ * session that had already started by `ts`.
  */
 function index(sorted) {
   const bind = new Map(); // session + turnId (and turnId alone) to update key
@@ -275,32 +279,52 @@ function index(sorted) {
     if (NIGHT_SOURCES.has(event.source) && event.session !== "")
       keepFirst(nightSource, event.session, event.source);
   }
-  return { bind, nightSource };
+  // Turns of each session in start order: this is what a keyless line looks its turn up in.
+  const sessionTurns = new Map();
+  for (const event of sorted) {
+    if (event.session === "") continue;
+    const keyed = keyedGroup(event, bind, nightSource);
+    if (keyed === null) continue;
+    const list = sessionTurns.get(event.session) ?? [];
+    if (!list.some((item) => item.id === keyed.id))
+      list.push({ at: event.at, id: keyed.id, kind: keyed.kind });
+    sessionTurns.set(event.session, list);
+  }
+  return { bind, nightSource, sessionTurns };
 }
 
-function groupOf(event, { bind, nightSource }) {
+/** The group of a line that carries a turn key, or null when it carries none. */
+function keyedGroup(event, bind, nightSource) {
   const { base, subagent } = splitTurn(event.turn);
-  const night = event.session !== "" && nightSource.has(event.session);
-  if (CALLBACK_KEY.test(base)) return null;
+  if (base === "" || CALLBACK_KEY.test(base)) return null;
   if (base.startsWith(UPDATE_PREFIX)) return { id: `u:${base}`, kind: "chat", subagent };
-  if (base !== "") {
-    const scoped = bind.get(`${event.session} ${base}`);
-    const loose = bind.get(` ${base}`);
-    const updateKey =
-      scoped !== undefined && scoped !== CONFLICT
-        ? scoped
-        : loose !== undefined && loose !== CONFLICT
-          ? loose
-          : "";
-    if (updateKey !== "") return { id: `u:${updateKey}`, kind: "chat", subagent };
-    if (night) return { id: `n:${event.session}`, kind: "night", subagent };
-    if (event.session !== "")
-      return { id: `s:${event.session}:${base}`, kind: "chat", subagent };
-    return { id: `t:${base}`, kind: "chat", subagent };
-  }
-  if (night) return { id: `n:${event.session}`, kind: "night", subagent };
-  if (event.session !== "") return { id: `s:${event.session}`, kind: "chat", subagent };
-  return null; // a callback line or a verdict with no turn: nothing to attach it to
+  const scoped = bind.get(`${event.session} ${base}`);
+  const loose = bind.get(` ${base}`);
+  const updateKey =
+    scoped !== undefined && scoped !== CONFLICT
+      ? scoped
+      : loose !== undefined && loose !== CONFLICT
+        ? loose
+        : "";
+  if (updateKey !== "") return { id: `u:${updateKey}`, kind: "chat", subagent };
+  const night = event.session !== "" && nightSource.has(event.session);
+  if (event.session !== "")
+    return { id: `s:${event.session}|${base}`, kind: night ? "night" : "chat", subagent };
+  return { id: `t:${base}`, kind: "chat", subagent };
+}
+
+function groupOf(event, { bind, nightSource, sessionTurns }) {
+  const keyed = keyedGroup(event, bind, nightSource);
+  if (keyed !== null) return keyed;
+  const { base } = splitTurn(event.turn);
+  if (CALLBACK_KEY.test(base)) return null; // the Bridge alone sees a callback: it has no turn
+  if (event.session === "") return null; // a verdict outside a turn: nothing to attach it to
+  let landed = null;
+  for (const item of sessionTurns.get(event.session) ?? [])
+    if (item.at <= event.at) landed = item;
+  if (landed !== null) return { id: landed.id, kind: landed.kind, subagent: "" };
+  const night = nightSource.has(event.session);
+  return { id: `s:${event.session}`, kind: night ? "night" : "chat", subagent: "" };
 }
 
 function absorb(turn, event, subagent, night) {
@@ -429,6 +453,40 @@ function collectCalls(turn) {
   return calls;
 }
 
+/** Every node that measures itself in tool calls. */
+const TOOL_NODES = [
+  "memory_search",
+  "write_card",
+  "bash",
+  "files",
+  "web_fetch",
+  "web_search",
+  "tasks",
+  "other",
+];
+
+/**
+ * What the number on a schema node means. Events touched a node while the turn ran, but an
+ * event count is not what the seam does: the Model counts steps, a tool counts calls, the
+ * Vault counts cards, a Gate counts verdicts (one line is one verdict), and the seams that
+ * pass a turn through — Bridge, Inbound pipeline, Outbox — count the events they wrote.
+ */
+function measure(turn, calls) {
+  const nodes = turn.nodes;
+  const counts = turn.counts;
+  const perTool = new Map();
+  for (const call of calls.values()) {
+    const node = toolNode(call.tool);
+    perTool.set(node, (perTool.get(node) ?? 0) + 1);
+  }
+  for (const node of TOOL_NODES)
+    if (perTool.has(node) || node in nodes) nodes[node] = perTool.get(node) ?? 0;
+  if ("model" in nodes || counts.steps > 0) nodes.model = counts.steps;
+  if ("tools" in nodes || counts.toolCalls > 0) nodes.tools = counts.toolCalls;
+  if ("planner" in nodes || counts.subagents > 0) nodes.planner = counts.subagents;
+  if ("vault" in nodes) nodes.vault = counts.cardsFound + counts.cardsWritten;
+}
+
 function countTools(turn, calls) {
   const counts = turn.counts;
   counts.toolCalls = calls.size;
@@ -466,7 +524,9 @@ function finish(turn) {
   turn.ms = last.at - first.at;
   if (turn.source === "") turn.source = first.source;
   const closed = turn.events.some((event) => TERMINAL.has(event.event));
-  countTools(turn, collectCalls(turn));
+  const calls = collectCalls(turn);
+  countTools(turn, calls);
+  measure(turn, calls);
   if (turn.flags.failed) turn.status = "failed";
   else if (turn.flags.cancelled || turn.flags.stopped) turn.status = "cancelled";
   else if (turn.flags.blocked) turn.status = "blocked";

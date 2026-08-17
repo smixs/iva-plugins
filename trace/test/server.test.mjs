@@ -7,12 +7,14 @@ import { mkdtempSync, rmSync, appendFileSync, readdirSync, statSync } from "node
 import { tmpdir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { get } from "node:http";
-import { createViewer, probeAgent, agentHealthUrl } from "./server.mjs";
-import { writeFixture } from "./fixture.mjs";
-import { traceDir, dayOf } from "./store.mjs";
+import { createViewer, probeAgent, agentHealthUrl } from "../sh.iva/services/viewer/server.mjs";
+import { writeFixture, fixturePlan } from "./fixture.mjs";
+import { traceDir, dayOf } from "../sh.iva/services/viewer/store.mjs";
 
 const NOW = Date.parse("2026-08-17T12:00:00Z");
 const TODAY = dayOf(NOW);
+const PLAN = fixturePlan(NOW);
+const TURNS = PLAN.chat.length + PLAN.night.length;
 
 function snapshot(dir) {
   const out = [];
@@ -135,10 +137,10 @@ test("the turns route stitches the fixture and hides nothing", async () => {
   try {
     const { status, body } = await app.json("/api/turns");
     assert.equal(status, 200);
-    assert.equal(body.turns.length, 14);
+    assert.equal(body.turns.length, TURNS);
     assert.equal(body.unattached, 1);
     assert.equal(body.today, TODAY);
-    assert.equal(body.days.length, 3);
+    assert.equal(body.days.length, 14); // the whole retention window
     // newest first, and the payload of a summary stays a summary
     assert.ok(body.turns[0].at >= body.turns[1].at);
     assert.equal(body.turns[0].events, undefined);
@@ -178,8 +180,9 @@ test("the tiles route answers for the three periods and refuses the rest", async
     const week = await app.json("/api/stats?days=7");
     assert.equal(week.body.period, 7);
     const all = await app.json("/api/stats?days=14");
-    assert.equal(all.body.turns, 14);
+    assert.equal(all.body.turns, TURNS);
     assert.ok(all.body.nodes.model > 0);
+    assert.ok(week.body.turns < all.body.turns); // the periods really differ on this journal
     // an unknown period falls back to today instead of inventing one
     const odd = await app.json("/api/stats?days=999");
     assert.equal(odd.body.period, 1);
@@ -290,6 +293,40 @@ test("serving every route writes nothing into the data directory", async () => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     request.destroy();
     assert.deepEqual(snapshot(app.dir), before);
+  } finally {
+    await app.close();
+  }
+});
+
+test("the stitched window is kept until a day file moves", async () => {
+  const app = await serve();
+  try {
+    const first = app.viewer.model();
+    // Nothing moved, so the second call must be the very same work, not the same numbers again.
+    assert.equal(app.viewer.model(), first);
+    const stats = app.viewer.stats(14, TODAY);
+    assert.equal(app.viewer.stats(14, TODAY), stats);
+    assert.notEqual(app.viewer.stats(7, TODAY), stats); // a different period is its own answer
+
+    appendFileSync(
+      join(traceDir(app.dir), `${TODAY}.jsonl`),
+      `${JSON.stringify({
+        ts: new Date(NOW).toISOString(),
+        turn: "tg:88123456:6100",
+        session: "",
+        source: "bridge",
+        kind: "bridge",
+        name: "admitted",
+        data: { chatId: 88123456, messageId: 6100, kind: "message", decision: "owned" },
+      })}\n`,
+    );
+    const second = app.viewer.model();
+    assert.notEqual(second, first); // the line landed: the window was stitched again
+    assert.equal(second.turns.length, first.turns.length + 1);
+    assert.equal(app.viewer.stats(14, TODAY).turns, TURNS + 1);
+    // and the route agrees with it
+    const { body } = await app.json("/api/turns");
+    assert.equal(body.turns.length, TURNS + 1);
   } finally {
     await app.close();
   }

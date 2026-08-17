@@ -84,7 +84,37 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     return page.text;
   };
 
-  const model = () => stitch(store.events());
+  /**
+   * Stitching the window is the expensive part of every route, and the window barely changes:
+   * one appended line at a time, and nothing at all between two clicks. So the model is kept
+   * against the fingerprint of the day files and rebuilt only when one of them moved. Purely a
+   * memory of what was read — the journal is still never written to.
+   */
+  let stitched = { stamp: "", turns: null, unattached: [], byId: new Map(), stats: new Map() };
+  const model = () => {
+    const stamp = store.stamp();
+    if (stitched.turns !== null && stitched.stamp === stamp) return stitched;
+    const { turns, unattached } = stitch(store.events());
+    stitched = {
+      stamp,
+      turns,
+      unattached,
+      byId: new Map(turns.map((turn) => [turn.id, turn])),
+      stats: new Map(),
+    };
+    return stitched;
+  };
+
+  /** Tiles of one period, held against the same fingerprint as the model. */
+  const stats = (days, today) => {
+    const current = model();
+    const key = `${today}|${days}`;
+    const hit = current.stats.get(key);
+    if (hit !== undefined) return hit;
+    const value = statsFor(current.turns, { today, days, dayOf });
+    current.stats.set(key, value);
+    return value;
+  };
 
   const health = async () => {
     const at = now();
@@ -182,7 +212,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     }
     if (path === "/api/turn") {
       const id = url.searchParams.get("id") ?? "";
-      const turn = model().turns.find((item) => item.id === id);
+      const turn = model().byId.get(id);
       if (turn === undefined) {
         sendJson(res, 404, { error: "no such turn" });
         return;
@@ -196,8 +226,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     if (path === "/api/stats") {
       const asked = Number(url.searchParams.get("days") ?? "1");
       const days = PERIODS.has(asked) ? asked : 1;
-      const { turns } = model();
-      sendJson(res, 200, statsFor(turns, { today: dayOf(now()), days, dayOf }));
+      sendJson(res, 200, stats(days, dayOf(now())));
       return;
     }
     if (path === "/api/status") {
@@ -233,7 +262,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
   }
 
   server.on("close", stopPolling);
-  return { server, model, health, journalFile, store, broadcast: (n, p) => broadcast(n, p) };
+  return { server, model, stats, health, journalFile, store };
 }
 
 export function main(env = process.env) {
