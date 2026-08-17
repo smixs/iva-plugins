@@ -251,12 +251,10 @@
         text-overflow: ellipsis;
       }
       .tile .s {
-        font: 9.5px/1.3 var(--mono);
+        font: 9px/1.35 var(--mono);
         color: var(--dim2);
         margin-top: 5px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        overflow-wrap: anywhere;
       }
       .tile.acc .v {
         color: var(--violet2);
@@ -285,13 +283,13 @@
       .barcap {
         font: 10px/1.4 var(--mono);
         color: var(--dim2);
-        margin-bottom: 13px;
+        margin-bottom: 8px;
       }
       .acti {
         display: flex;
         align-items: flex-end;
         gap: 3px;
-        height: 56px;
+        height: 50px;
         margin-top: 2px;
       }
       .acti .col {
@@ -534,8 +532,8 @@
           box-shadow 0.25s;
       }
       .mini .t {
-        font: 500 10px/1.2 var(--mono);
-        padding-right: 14px;
+        font: 500 9.5px/1.25 var(--mono);
+        padding-right: 12px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -990,7 +988,7 @@
               </div>
               <div class="node wide" data-node="inbound" style="flex: 1.35">
                 <div class="t">Inbound pipeline</div>
-                <div class="d">allowlist · dispatch · media</div>
+                <div class="d">the only way in</div>
                 <div class="c">0</div>
                 <div class="subs">
                   <div class="sub" data-node="allowlist">
@@ -1001,7 +999,7 @@
               </div>
               <div class="node" data-node="gate_in" style="flex: 0 0 116px">
                 <div class="t">Gate</div>
-                <div class="d">inbound · sanitizer</div>
+                <div class="d">sanitizer</div>
                 <div class="c">0</div>
               </div>
               <div class="node wide" data-node="context" style="flex: 1.9">
@@ -1091,7 +1089,7 @@
               </div>
               <div class="node" data-node="planner" style="flex: 0 0 128px">
                 <div class="t">planner</div>
-                <div class="d">subagent · own steps</div>
+                <div class="d">subagent</div>
                 <div class="c">0</div>
               </div>
             </div>
@@ -1880,10 +1878,12 @@
       }
 
       async function select(id) {
+        // The replay stops first: stopping it clears the schema, and clearing it after the
+        // new turn is drawn would wipe the path and the slot values right off the page.
+        if (state.mode !== "live") stopReplay();
         state.selected = id;
         renderTurns();
         await loadTurn(id);
-        if (state.mode !== "live") stopReplay();
       }
 
       async function loadStatus() {
