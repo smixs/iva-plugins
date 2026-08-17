@@ -73,6 +73,10 @@
         gap: 7px;
         min-width: 0;
       }
+      .status b {
+        color: var(--dim);
+        font-weight: 400;
+      }
       .status .path {
         color: var(--dim2);
         overflow: hidden;
@@ -112,6 +116,7 @@
       }
       .seg {
         display: flex;
+        flex: 0 0 auto;
         border: 1px solid var(--line2);
         border-radius: 5px;
         overflow: hidden;
@@ -411,13 +416,18 @@
         color: var(--dim2);
         font-variant-numeric: tabular-nums;
       }
+      /* On the path of the selected turn. #7d74bd against the idle #2a2a35 is 3.45:1, so the
+         path reads as a path and not as a shade of the same grey. */
       .node.seen {
-        border-color: #43435c;
-        background: #17171f;
+        border-color: #7d74bd;
+        background: #191634;
+      }
+      .node.seen > .t {
+        color: #fff;
       }
       .node.seen > .d,
       .node.seen > .c {
-        color: #7b7b8d;
+        color: #a6a0d4;
       }
       .node.hot {
         border-color: var(--violet);
@@ -438,6 +448,23 @@
       .node.warn {
         border-color: var(--amber);
         background: #2a2211;
+      }
+      .node.bad > .c,
+      .node.bad > .d {
+        color: #f2a0a0;
+      }
+      .node.warn > .c,
+      .node.warn > .d {
+        color: #e5c36b;
+      }
+      /* A seam the journal knows nothing about: no number, and it says why. */
+      .node.na {
+        border-style: dashed;
+        border-color: #2a2a35;
+        background: transparent;
+      }
+      .node.na .t {
+        color: var(--dim);
       }
       .node.wide {
         flex: 1;
@@ -490,6 +517,14 @@
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
       }
+      .sub.seen {
+        border-color: #7d74bd;
+        background: #191634;
+      }
+      .sub.seen .t,
+      .sub.seen .v {
+        color: #a6a0d4;
+      }
       .sub.hot {
         border-color: var(--violet);
         background: var(--violetbg);
@@ -498,12 +533,52 @@
       .sub.hot .v {
         color: var(--violet2);
       }
+      .sub.bad {
+        border-color: var(--red);
+        background: #2a1414;
+      }
+      .sub.bad .t,
+      .sub.bad .v {
+        color: #f2a0a0;
+      }
+      .sub.warn {
+        border-color: var(--amber);
+        background: #2a2211;
+      }
+      .sub.warn .t,
+      .sub.warn .v {
+        color: #e5c36b;
+      }
       .group {
         position: relative;
         border: 1px dashed var(--line2);
         border-radius: 5px;
         padding: 13px 7px 7px;
         min-width: 0;
+      }
+      .group > .c {
+        position: absolute;
+        top: 3px;
+        right: 6px;
+        font: 9.5px/1 var(--mono);
+        color: var(--dim2);
+        font-variant-numeric: tabular-nums;
+      }
+      .group.seen {
+        border-color: #7d74bd;
+        border-style: solid;
+      }
+      .group.seen > .c,
+      .group.seen > .glabel {
+        color: #a6a0d4;
+      }
+      .group.hot {
+        border-color: var(--violet);
+        border-style: solid;
+      }
+      .group.hot > .c,
+      .group.hot > .glabel {
+        color: var(--violet2);
       }
       .group > .glabel {
         position: absolute;
@@ -553,11 +628,12 @@
         color: var(--dim2);
       }
       .mini.seen {
-        border-color: #43435c;
-        background: #17171f;
+        border-color: #7d74bd;
+        background: #191634;
       }
-      .mini.seen .c {
-        color: #7b7b8d;
+      .mini.seen .c,
+      .mini.seen .d {
+        color: #a6a0d4;
       }
       .mini.hot {
         border-color: var(--violet);
@@ -570,6 +646,10 @@
       .mini.bad {
         border-color: var(--red);
         background: #2a1414;
+      }
+      .mini.warn {
+        border-color: var(--amber);
+        background: #2a2211;
       }
       .flash {
         animation: flash 0.9s ease-out 2;
@@ -593,7 +673,8 @@
         stroke: #45455a;
       }
       path.edge.seen {
-        stroke: #55556c;
+        stroke: #9d95d8;
+        stroke-width: 2;
       }
       path.edge.hot {
         stroke: var(--violet);
@@ -615,6 +696,9 @@
         stroke-width: 3px;
         stroke-linejoin: round;
       }
+      text.elabel.seen {
+        fill: #9d95d8;
+      }
       text.elabel.hot {
         fill: var(--violet2);
       }
@@ -623,7 +707,7 @@
       .replay {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 9px;
         margin-top: 11px;
         padding: 8px 10px;
         border: 1px solid var(--line);
@@ -631,6 +715,8 @@
         background: var(--panel2);
       }
       .btn {
+        white-space: nowrap;
+        flex: 0 0 auto;
         background: var(--panel3);
         border: 1px solid var(--line2);
         color: var(--text);
@@ -654,6 +740,7 @@
         font-size: 9.5px;
       }
       .replay .mode {
+        flex: 0 0 auto;
         font: 600 9.5px/1 var(--mono);
         letter-spacing: 1px;
         color: var(--green);
@@ -667,22 +754,63 @@
         border-color: #2c2657;
         background: var(--violetbg);
       }
+      /* 14px of grab area on a 4px track, and a fixed width: the bar must not shuffle
+         sideways every time the clock under it gains a digit. */
       .replay input[type="range"] {
-        flex: 1;
-        accent-color: var(--violet);
-        height: 3px;
-        min-width: 60px;
+        flex: 0 0 200px;
+        width: 200px;
+        height: 14px;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        -webkit-appearance: none;
+        appearance: none;
+        cursor: pointer;
+      }
+      .replay input[type="range"]::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: #2f2f3d;
+      }
+      .replay input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 12px;
+        height: 12px;
+        margin-top: -4px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--violet2);
+      }
+      .replay input[type="range"]::-moz-range-track {
+        height: 4px;
+        border-radius: 2px;
+        background: #2f2f3d;
+      }
+      .replay input[type="range"]::-moz-range-thumb {
+        width: 12px;
+        height: 12px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--violet2);
       }
       .replay .time {
         font: 10.5px/1 var(--mono);
         color: var(--dim);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
+        flex: 0 0 auto;
+        min-width: 96px;
+        text-align: right;
       }
       .replay .hint {
         font: 9.5px/1 var(--mono);
         color: var(--dim2);
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1 1 auto;
+        min-width: 0;
       }
 
       /* ── right pane ─────────────────────────────────────────────────── */
@@ -918,8 +1046,12 @@
     <header class="top">
       <div class="brand">Trace<span>iva · viewer</span></div>
       <div class="status" id="status">
-        <span class="pulse" id="pulse"></span>
-        <span id="statustext">connecting</span>
+        <span class="pulse warn" id="spulse"></span>
+        <span id="streamtext">stream: connecting</span>
+        <span id="updated">·</span>
+        <span class="path" id="jpath"></span>
+        <span class="pulse warn" id="apulse"></span>
+        <span id="agenttext">agent: unknown</span>
       </div>
       <div class="spacer"></div>
       <div class="seg" id="periods">
@@ -948,6 +1080,7 @@
           <li>j / k<b>turn</b></li>
           <li>r<b>replay</b></li>
           <li>space<b>pause</b></li>
+          <li>esc<b>back to live</b></li>
         </ul>
       </aside>
 
@@ -959,13 +1092,17 @@
         <div class="barcap" id="barcap"></div>
 
         <div class="head">
-          <b>Architecture — live</b><span id="schemahint">counts for today</span>
+          <b>Architecture — <span id="scope">today</span></b
+          ><span id="schemahint">counts for today</span>
         </div>
         <div class="schema" id="schema">
           <svg class="edges" id="edges">
             <defs>
               <marker id="a-idle" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path d="M0 1 L7 4 L0 7 z" fill="#6a6a88" />
+              </marker>
+              <marker id="a-seen" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 1 L7 4 L0 7 z" fill="#9d95d8" />
               </marker>
               <marker id="a-hot" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path d="M0 1 L7 4 L0 7 z" fill="#7c6cf5" />
@@ -1044,6 +1181,7 @@
               </div>
               <div class="group" style="flex: 1" data-node="tools">
                 <div class="glabel">Tools</div>
+                <div class="c">0</div>
                 <div class="grid4">
                   <div class="mini" data-node="memory_search">
                     <div class="t">memory_search</div>
@@ -1135,10 +1273,11 @@
                 <div class="d">night summary · digest</div>
                 <div class="c">0</div>
               </div>
-              <div class="node wide" data-node="brain">
+              <!-- The journal has no brain.* event (contract), so this box carries no number:
+                   a zero here would be a lie about a seam that runs every night. -->
+              <div class="node na wide" data-node="brain">
                 <div class="t">Brain</div>
-                <div class="d">deterministic · enforce · decay · MOC</div>
-                <div class="c">0</div>
+                <div class="d">deterministic night care · not in the journal</div>
               </div>
             </div>
           </div>
@@ -1194,7 +1333,8 @@
         turns: [],
         stats: null,
         selected: null,
-        detail: null,
+        cleared: false, // the owner let the turn go: no new line may select one behind their back
+        feed: undefined,
         mode: "live",
         lastLineAt: Date.now(),
         streamOk: false,
@@ -1216,6 +1356,7 @@
         if (Math.abs(n) >= 1e4) return `${(n / 1e3).toFixed(1)}k`;
         return String(Math.round(n));
       };
+      const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
       const fmtBytes = (b) =>
         !Number.isFinite(b) || b === 0 ? "0" : b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}k`;
       const clock = (iso) => {
@@ -1237,12 +1378,16 @@
 
       // ── tiles ───────────────────────────────────────────────────────────────────
       function renderTiles(s) {
-        const cards = s.cardsFoundKnown ? fmtNum(s.cardsFound) : "—";
         const tiles = [
           { v: fmtNum(s.turns), k: "turns", s: `${s.chat} chat · ${s.night} night`, c: "acc" },
           { v: fmtMs(s.avgMs), k: "avg turn", s: `${s.timedTurns} finished`, c: "" },
           { v: fmtNum(s.toolCalls), k: "tool calls", s: `${s.toolErrors} failed`, c: s.toolErrors > 0 ? "warn" : "" },
-          { v: fmtNum(s.memorySearch), k: "memory_search", s: `${cards} cards found`, c: "" },
+          {
+            v: fmtNum(s.memorySearch),
+            k: "memory_search",
+            s: s.cardsFoundKnown ? `${plural(s.cardsFound, "card")} found` : "cards unknown",
+            c: "",
+          },
           { v: fmtNum(s.cardsWritten), k: "write_card", s: "cards written", c: "" },
           {
             v: fmtNum(s.gateBlocked),
@@ -1277,8 +1422,11 @@
       /** One bar for the period: how the turns ended. The tiles stay equal, this is the shape. */
       function renderBar(turns, s) {
         const total = turns.length;
+        const verdicts = s.gateClean + s.gateFlagged + s.gateBlocked;
         $("barhint").textContent =
-          total === 0 ? "no turns in the period" : `${total} turns · ${s.gateClean + s.gateFlagged + s.gateBlocked} Gate verdicts`;
+          total === 0
+            ? "no turns in the period"
+            : `${plural(total, "turn")} · ${plural(verdicts, "Gate verdict")}`;
         if (total === 0) {
           $("bar").innerHTML = `<div style="background: var(--panel3); flex: 1"></div>`;
           $("barcap").textContent = "the journal has nothing for this period yet";
@@ -1297,7 +1445,7 @@
         const blocked = counts.get("blocked") ?? 0;
         const failed = counts.get("failed") ?? 0;
         $("barcap").textContent =
-          `Gate blocked ${blocked} of ${total} turns, ${failed} failed on the way out; ` +
+          `Gate blocked ${blocked} of ${plural(total, "turn")}, ${failed} failed on the way out; ` +
           `${s.gateFlagged} verdicts came back flagged and ${s.gateClean} clean.`;
       }
 
@@ -1355,7 +1503,6 @@
         ["outbox", "Outbox"],
         ["vault", "Vault"],
         ["rollup", "Rollup"],
-        ["brain", "Brain"],
       ];
 
       function renderRail(s, meta) {
@@ -1394,8 +1541,8 @@
         ["planner", "tools", "l", "r", "out", { fy: 0.74 }],
         ["model", "outbox", "b", "t", "answer", { fx: 0.3, tx: 0.16 }],
         ["outbox", "telegram_out", "r", "l", "sent", { fy: 0.3 }],
-        ["memory_search", "vault", "b", "t", "cards read", { dash: true, fx: 0.4, tx: 0.3 }],
-        ["write_card", "vault", "b", "t", "card written", { dash: true, fx: 0.6, tx: 0.66 }],
+        ["memory_search", "vault", "b", "t", "cards read", { dash: true, fx: 0.4, tx: 0.3, lx: 0.8, ly: "near" }],
+        ["write_card", "vault", "b", "t", "card written", { dash: true, fx: 0.6, tx: 0.66, lx: 0.8, ly: "near" }],
         ["rollup", "vault", "t", "b", "cards", { dash: true, fx: 0.3, tx: 0.46 }],
         ["report", "outbox", "t", "b", "notice", { dash: true, fx: 0.4, tx: 0.55 }],
         ["brain", "vault", "t", "b", "enforce · decay · MOC", { dash: true, fx: 0.3, tx: 0.88 }],
@@ -1439,7 +1586,7 @@
           let text = null;
           if (label !== "") {
             text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-            const mid = midOf(x1, y1, x2, y2, fs, ts, o.dip ?? 0);
+            const mid = midOf(x1, y1, x2, y2, fs, ts, o.dip ?? 0, o);
             text.setAttribute("x", mid[0]);
             text.setAttribute("y", mid[1]);
             text.setAttribute("text-anchor", "middle");
@@ -1476,10 +1623,13 @@
         return `M${x1} ${y1} L${x1} ${my - dy} Q${x1} ${my} ${x1 + dx} ${my} L${x2 - dx} ${my} Q${x2} ${my} ${x2} ${my + dy} L${x2} ${y2}`;
       }
 
-      function midOf(x1, y1, x2, y2, fs, ts, dip) {
+      function midOf(x1, y1, x2, y2, fs, ts, dip, o = {}) {
         // Between bands the line runs along the gap: the label rides just above that run.
         if ((fs === "b" && ts === "t") || (fs === "t" && ts === "b"))
-          return [(x1 + x2) / 2, (y1 + y2) / 2 - 3.5];
+          return [
+            x1 + (x2 - x1) * (o.lx ?? 0.5),
+            o.ly === "near" ? y2 - Math.sign(y2 - y1) * 5.5 : (y1 + y2) / 2 - 3.5,
+          ];
         if (fs === ts && fs === "t") return [(x1 + x2) / 2, Math.min(y1, y2) + dip - 4];
         if (fs === ts && fs === "b") return [(x1 + x2) / 2, Math.max(y1, y2) + dip + 11];
         return [(x1 + x2) / 2, (y1 + y2) / 2 - 4];
@@ -1503,7 +1653,7 @@
         for (const e of edgeEls) {
           e.path.classList.remove("hot", "seen");
           e.path.setAttribute("marker-end", "url(#a-idle)");
-          e.text?.classList.remove("hot");
+          e.text?.classList.remove("hot", "seen");
         }
         for (const t of cool.values()) clearTimeout(t);
         cool.clear();
@@ -1515,10 +1665,12 @@
       function heat(event, decay) {
         const nodes = event.nodes ?? [];
         const bad = isBad(event);
+        const warn = !bad && isWarn(event);
         for (const id of nodes) {
           for (const el of nodeEls.get(id) ?? []) {
             el.classList.add("seen", "hot");
             if (bad) el.classList.add("bad");
+            else if (warn) el.classList.add("warn");
             if (decay > 0) {
               clearTimeout(cool.get(el));
               cool.set(
@@ -1559,8 +1711,14 @@
         if (event.event === "inbound.received")
           put("allowlist", event.data.allowlisted === true ? "passed" : "refused");
         if (event.kind === "gate" && event.name === "outbound")
-          put("gate_out", event.data.clean === false ? `${(event.data.findings ?? []).length} findings` : "clean");
+          put(
+            "gate_out",
+            event.data.clean === false
+              ? plural((event.data.findings ?? []).length, "finding")
+              : "clean",
+          );
         if (event.kind === "stop") put("stop", event.name);
+        if (event.event === "eve.turn.cancelled") put("stop", "cancelled");
       }
 
       const isBad = (e) =>
@@ -1572,6 +1730,16 @@
         e.name === "rejected" ||
         e.name === "cancelled" ||
         (e.kind === "eve" && e.name.endsWith(".failed"));
+
+      /** Not a failure, but not clean either: a flagged verdict, a Stop, a trimmed event. */
+      const isWarn = (e) =>
+        (e.kind === "gate" &&
+          (e.data.clean === false ||
+            (Array.isArray(e.data.flags) && e.data.flags.length > 0))) ||
+        e.kind === "stop" ||
+        e.event === "eve.turn.cancelled" ||
+        e.data.fellBack === true ||
+        e.data.traceTrimmed === true;
 
       // ── turns list ──────────────────────────────────────────────────────────────
       function renderTurns() {
@@ -1592,9 +1760,9 @@
           const bits = [
             clock(turn.startedAt),
             fmtMs(turn.ms),
-            `${turn.counts.steps} steps`,
-            tools > 0 ? `${tools} tools` : "",
-            turn.counts.cardsFound > 0 ? `${turn.counts.cardsFound} cards` : "",
+            plural(turn.counts.steps, "step"),
+            tools > 0 ? plural(tools, "tool call") : "",
+            turn.counts.cardsFound > 0 ? `${plural(turn.counts.cardsFound, "card")} found` : "",
             turn.status === "ok" ? "" : turn.status,
           ].filter((b) => b !== "");
           rows.push(
@@ -1635,7 +1803,9 @@
         if (e.kind === "gate" && (e.name === "inbound" || e.name === "web"))
           bits.push(d.blocked === true ? `blocked · ${d.reason ?? ""}` : `${d.chars ?? 0}ch`);
         if (e.event === "gate.outbound")
-          bits.push(d.clean === false ? `${(d.findings ?? []).length} findings` : `${d.chars ?? 0}ch`);
+          bits.push(
+            d.clean === false ? plural((d.findings ?? []).length, "finding") : `${d.chars ?? 0}ch`,
+          );
         if (e.kind === "outbox") bits.push(`${d.chars ?? 0}ch`);
         if (e.event === "inbound.received" && typeof d.textChars === "number")
           bits.push(`${d.textChars}ch`);
@@ -1647,33 +1817,87 @@
         return bits.filter((b) => b !== "").join(" · ");
       }
 
-      /** The path one turn took: every node it touched, with the last value of each slot. */
-      function paintTurnPath(events) {
+      /**
+       * The path one turn took, on the schema. Every node it touched stays lit, the seam that
+       * failed goes red, the seam it is standing on is hot. `upto` is the playhead of the
+       * replay; without it the whole turn is lit and its last event is the hot one. The path
+       * stays on the page for as long as the turn is selected — it is the story of the turn.
+       */
+      function applyPath(events, upto) {
         clearHeat();
+        if (events.length === 0) return -1;
+        const last =
+          upto === undefined || upto < 0 ? events.length - 1 : Math.min(upto, events.length - 1);
         let prev = "";
-        for (const event of events) {
+        for (let i = 0; i <= last; i += 1) {
+          const event = events[i];
+          const bad = isBad(event);
+          const warn = !bad && isWarn(event);
           for (const id of event.nodes ?? [])
-            for (const el of nodeEls.get(id) ?? []) el.classList.add("seen");
+            for (const el of nodeEls.get(id) ?? []) {
+              el.classList.add("seen");
+              if (bad) el.classList.add("bad");
+              else if (warn) el.classList.add("warn");
+            }
           const to = (event.nodes ?? [])[0];
           if (to !== undefined) {
             for (const edge of edgeEls)
-              if (edge.to === to && (edge.from === prev || prev === "")) edge.path.classList.add("seen");
+              if (edge.to === to && (edge.from === prev || prev === "")) {
+                edge.path.classList.add("seen");
+                edge.path.setAttribute("marker-end", "url(#a-seen)");
+                edge.text?.classList.add("seen");
+              }
             prev = to;
           }
           slots(event);
         }
+        lastNode = last > 0 ? ((events[last - 1].nodes ?? [])[0] ?? "") : "";
+        heat(events[last], 0);
+        return last;
+      }
+
+      /**
+       * What the schema is talking about right now: one turn, or the whole period. The numbers
+       * in the boxes follow the same choice as the highlight — two scales in one picture is how
+       * a dashboard starts lying.
+       */
+      function paintSelection() {
+        const feed = state.selected === null ? undefined : state.feed;
+        if (feed !== undefined) {
+          applyPath(feed.events);
+          paintCounts(feed.turn.nodes);
+        } else {
+          clearHeat();
+          if (state.stats !== null) paintCounts(state.stats.nodes);
+        }
+        paintScope();
+      }
+
+      const UNITS = "steps on the Model · calls on a tool · cards in the Vault · Gate verdicts";
+
+      function paintScope() {
+        const period = state.days === 1 ? "today" : `${state.days} days`;
+        const feed = state.selected === null ? undefined : state.feed;
+        const turn = feed === undefined ? null : feed.turn;
+        $("scope").textContent =
+          turn === null ? period : turn.turnKey || turn.updateKey || turn.session || turn.id;
+        $("schemahint").textContent =
+          turn === null
+            ? `pick a turn to follow one · ${UNITS}`
+            : `esc for the period · ${UNITS}`;
+        $("railperiod").textContent = period;
       }
 
       function renderFeed(turn, events) {
         state.feed = { turn, events };
-        $("feedhint").textContent = `${turn.kind === "night" ? turn.source : "chat"} · ${events.length} events`;
+        $("feedhint").textContent = `${turn.kind === "night" ? turn.source : "chat"} · ${plural(events.length, "event")}`;
         const t = turn;
         const meta = [
           ["started", clock(t.startedAt)],
           ["took", fmtMs(t.ms)],
           ["status", t.status],
           ["steps", t.counts.steps],
-          ["tools", t.counts.toolCalls],
+          ["tool calls", t.counts.toolCalls],
           ["cards", `${t.counts.cardsFound} found / ${t.counts.cardsWritten} written`],
           ["tokens", `${fmtNum(t.tokens.in + t.tokens.out)} · $${t.tokens.costUsd.toFixed(3)}`],
           ["turn", t.turnKey || t.updateKey || "—"],
@@ -1696,7 +1920,10 @@
             );
           })
           .join("");
-        if (state.mode === "live") paintTurnPath(events);
+        if (state.mode === "live") {
+          paintSelection();
+          $("rhint").textContent = `r replays this turn · ${plural(events.length, "event")}`;
+        }
         if (t.reply !== "")
           $("chips").insertAdjacentHTML(
             "beforeend",
@@ -1731,7 +1958,18 @@
       }
 
       // ── replay ──────────────────────────────────────────────────────────────────
-      const replay = { events: [], dur: 0, at: 0, speed: 1, playing: false, raf: 0, last: 0 };
+      const replay = {
+        events: [],
+        offsets: [],
+        dur: 0,
+        at: 0,
+        speed: 1,
+        playing: false,
+        active: false, // a turn is loaded into the bar: the scrub and the pause mean something
+        painted: -1, // which event the schema is showing, so a frame repaints only on a change
+        raf: 0,
+        last: 0,
+      };
 
       function setMode(mode) {
         state.mode = mode;
@@ -1741,30 +1979,48 @@
       }
 
       function startReplay() {
-        const feed = state.feed;
+        const feed = state.selected === null ? undefined : state.feed;
         if (feed === undefined || feed.events.length === 0) return;
         const t0 = new Date(feed.events[0].ts).getTime();
-        replay.events = feed.events.map((e) => ({ e, at: new Date(e.ts).getTime() - t0 }));
-        replay.dur = Math.max(1, replay.events[replay.events.length - 1].at);
+        replay.events = feed.events;
+        replay.offsets = feed.events.map((e) => new Date(e.ts).getTime() - t0);
+        replay.dur = Math.max(1, replay.offsets[replay.offsets.length - 1]);
         replay.at = 0;
+        replay.active = true;
+        replay.painted = -1;
+        setMode("replay");
+        $("rhint").textContent = feed.turn.title.slice(0, 40);
+        resume();
+      }
+
+      /**
+       * The frame loop runs while the replay plays and not one frame longer: a still schema
+       * costs nothing, and a page left open overnight must not keep a core warm.
+       */
+      function resume() {
+        if (!replay.active || replay.raf !== 0) return;
         replay.playing = true;
         replay.last = performance.now();
-        setMode("replay");
-        clearHeat();
-        $("rhint").textContent = feed.turn.title.slice(0, 30);
-        cancelAnimationFrame(replay.raf);
         replay.raf = requestAnimationFrame(step);
+        $("pause").textContent = "Pause";
+      }
+
+      function hold() {
+        replay.playing = false;
+        cancelAnimationFrame(replay.raf);
+        replay.raf = 0;
+        $("pause").textContent = "Resume";
       }
 
       function step(now) {
-        if (replay.playing) {
-          replay.at += (now - replay.last) * replay.speed;
-          if (replay.at >= replay.dur + 900) {
-            replay.at = replay.dur;
-            replay.playing = false;
-          }
-        }
+        replay.at += (now - replay.last) * replay.speed;
         replay.last = now;
+        if (replay.at >= replay.dur + 900) {
+          replay.at = replay.dur;
+          applyReplay();
+          endReplay(); // the last frame stays lit and the page goes back to live
+          return;
+        }
         applyReplay();
         replay.raf = requestAnimationFrame(step);
       }
@@ -1773,41 +2029,18 @@
         const at = replay.at;
         $("scrub").value = String(Math.round((at / replay.dur) * 1000));
         $("rtime").textContent = `${(at / 1000).toFixed(1)}s / ${(replay.dur / 1000).toFixed(1)}s`;
-        for (const [, els] of nodeEls)
-          for (const el of els) el.classList.remove("hot", "seen", "bad");
-        for (const e of edgeEls) {
-          e.path.classList.remove("hot", "seen");
-          e.path.setAttribute("marker-end", "url(#a-idle)");
-          e.text?.classList.remove("hot");
-        }
-        lastNode = "";
-        // Everything up to the playhead is the path already taken; the last event stays lit,
-        // so the schema always shows which seam the turn is standing on.
+        // Everything up to the playhead is the path already taken; the event under it stays
+        // lit, so the schema always shows which seam the turn is standing on.
         let current = -1;
-        let prev = "";
-        for (let i = 0; i < replay.events.length; i += 1) {
-          const item = replay.events[i];
-          if (item.at > at) break;
+        for (let i = 0; i < replay.offsets.length; i += 1) {
+          if (replay.offsets[i] > at) break;
           current = i;
-          const bad = isBad(item.e);
-          for (const id of item.e.nodes ?? [])
-            for (const el of nodeEls.get(id) ?? []) {
-              el.classList.add("seen");
-              if (bad) el.classList.add("bad");
-            }
-          const to = (item.e.nodes ?? [])[0];
-          if (to !== undefined) {
-            for (const edge of edgeEls)
-              if (edge.to === to && (edge.from === prev || prev === ""))
-                edge.path.classList.add("seen");
-            prev = to;
-          }
-          slots(item.e);
         }
-        if (current >= 0) {
-          lastNode = current > 0 ? ((replay.events[current - 1].e.nodes ?? [])[0] ?? "") : "";
-          heat(replay.events[current].e, 0);
-        }
+        // Sixty frames a second, but events arrive a few times a second: the schema is repainted
+        // when the playhead reaches the next event, not on every frame.
+        if (current === replay.painted) return;
+        replay.painted = current;
+        applyPath(replay.events, current);
         for (const chip of document.querySelectorAll(".chip.now")) chip.classList.remove("now");
         if (current >= 0) {
           const chip = document.querySelector(`.chip[data-i="${current}"]`);
@@ -1821,14 +2054,27 @@
         }
       }
 
-      function stopReplay() {
+      /** The replay ran out: the schema keeps its last frame and the page is live again. */
+      function endReplay() {
+        hold();
+        replay.active = false;
         replay.playing = false;
-        cancelAnimationFrame(replay.raf);
-        replay.raf = 0;
         setMode("live");
-        clearHeat();
-        $("rtime").textContent = "0.0s / 0.0s";
+        $("pause").textContent = "Pause";
+        $("rhint").textContent = "replay done · live again";
+      }
+
+      /** Escape, or a new turn: drop the replay and show the selected turn as it stands. */
+      function stopReplay() {
+        hold();
+        replay.active = false;
+        replay.at = 0;
+        setMode("live");
+        $("pause").textContent = "Pause";
         $("scrub").value = "0";
+        $("rtime").textContent = `0.0s / ${(replay.dur / 1000).toFixed(1)}s`;
+        $("rhint").textContent = state.selected === null ? "select a turn" : "live";
+        paintSelection();
       }
 
       // ── data ────────────────────────────────────────────────────────────────────
@@ -1847,7 +2093,6 @@
       async function loadStats() {
         state.stats = await jget(`/api/stats?days=${state.days}`);
         renderTiles(state.stats);
-        paintCounts(state.stats.nodes);
         renderRail(state.stats, { days: state.days_list ?? [], unattached: state.unattached ?? 0 });
         const inPeriod = state.turns.filter((t) => {
           const day = dayKey(t.startedAt);
@@ -1855,9 +2100,9 @@
         });
         renderBar(inPeriod, state.stats);
         renderActivity(state.turns);
-        const label = state.days === 1 ? "today" : `${state.days} days`;
-        $("railperiod").textContent = label;
-        $("schemahint").textContent = `counts for ${label}`;
+        // The boxes carry the period only while no turn is selected: one scale at a time.
+        if (state.selected === null) paintSelection();
+        else paintScope();
       }
 
       async function loadTurns(keep = true) {
@@ -1865,11 +2110,15 @@
         state.turns = data.turns;
         state.days_list = data.days;
         state.unattached = data.unattached;
-        $("turnshint").textContent = `${data.turns.length} in ${data.days.length} day files`;
-        if (!keep || state.selected === null || !state.turns.some((t) => t.id === state.selected))
+        $("turnshint").textContent = `${plural(data.turns.length, "turn")} in ${plural(data.days.length, "day file")}`;
+        const gone = state.selected !== null && !state.turns.some((t) => t.id === state.selected);
+        // A turn the owner let go of stays let go, however many lines arrive after it.
+        if (!keep || (!state.cleared && (state.selected === null || gone)))
           state.selected = state.turns.length > 0 ? state.turns[0].id : null;
+        else if (gone) state.selected = null;
         renderTurns();
         if (state.selected !== null) await loadTurn(state.selected);
+        else paintSelection();
       }
 
       async function loadTurn(id) {
@@ -1878,12 +2127,28 @@
       }
 
       async function select(id) {
-        // The replay stops first: stopping it clears the schema, and clearing it after the
-        // new turn is drawn would wipe the path and the slot values right off the page.
-        if (state.mode !== "live") stopReplay();
+        // The replay stops first: stopping it repaints the schema, and repainting after the
+        // new turn is drawn would wipe its path and slot values right off the page.
+        if (replay.active) stopReplay();
+        state.cleared = false;
         state.selected = id;
         renderTurns();
         await loadTurn(id);
+      }
+
+      /** Let the turn go: the schema goes back to the period, the feed says so. */
+      function deselect() {
+        if (replay.active) stopReplay();
+        state.cleared = true;
+        state.selected = null;
+        state.feed = undefined;
+        renderTurns();
+        $("feedhint").textContent = "nothing selected";
+        $("meta").innerHTML = "";
+        $("chips").innerHTML =
+          `<div class="empty">pick a turn — until then the schema counts the period</div>`;
+        $("rhint").textContent = "select a turn";
+        paintSelection();
       }
 
       async function loadStatus() {
@@ -1891,36 +2156,78 @@
           const s = await jget("/api/status");
           state.agent = s.agent;
           state.journal = s.path;
-          if (!state.streamOk) state.lastLineAt = state.lastLineAt;
         } catch {
           state.agent = "unknown";
         }
         paintStatus();
       }
 
+      const AGENT_WORD = {
+        alive: "agent: alive",
+        unreachable: "agent: restarting or unreachable",
+        unknown: "agent: unknown",
+      };
+
+      /** Write only what changed: this runs every second for as long as the page is open. */
+      const put = (el, text) => {
+        if (el.textContent !== text) el.textContent = text;
+      };
+
+      /**
+       * Two facts, two dots. The stream is between this page and the viewer; the agent is a
+       * different process altogether, and it can be restarting while the journal reads fine.
+       */
       function paintStatus() {
         const ago = Math.round((Date.now() - state.lastLineAt) / 1000);
-        const agent =
-          state.agent === "alive"
-            ? "agent alive"
-            : state.agent === "unreachable"
-              ? "agent restarting or unreachable"
-              : "agent unknown";
-        const stream = state.streamOk ? "live" : "reconnecting";
-        $("statustext").innerHTML =
-          `${stream} · updated ${ago}s ago · <span class="path">${esc(state.journal)}</span> · ${esc(agent)}`;
-        const p = $("pulse");
-        p.className = `pulse${state.agent === "alive" && state.streamOk ? "" : state.agent === "unreachable" ? " bad" : " warn"}`;
+        put($("streamtext"), `stream: ${state.streamOk ? "live" : "reconnecting"}`);
+        put($("updated"), `· last line ${ago}s ago ·`);
+        put($("jpath"), state.journal);
+        put($("agenttext"), AGENT_WORD[state.agent] ?? AGENT_WORD.unknown);
+        const spulse = `pulse${state.streamOk ? "" : " warn"}`;
+        const apulse = `pulse${
+          state.agent === "alive" ? "" : state.agent === "unreachable" ? " bad" : " warn"
+        }`;
+        if ($("spulse").className !== spulse) $("spulse").className = spulse;
+        if ($("apulse").className !== apulse) $("apulse").className = apulse;
       }
 
       // ── live stream ─────────────────────────────────────────────────────────────
       let refreshTimer = 0;
+      let refreshing = false;
+      let refreshAgain = false;
+      let refreshedAt = 0;
+      const QUIET_MS = 1200; // a burst of lines is one refresh, not one per line
+      const MAX_WAIT_MS = 2500; // but a turn that keeps writing must still show up while it runs
       function scheduleRefresh() {
+        if (Date.now() - refreshedAt > MAX_WAIT_MS) {
+          clearTimeout(refreshTimer);
+          refresh();
+          return;
+        }
         clearTimeout(refreshTimer);
-        refreshTimer = setTimeout(async () => {
+        refreshTimer = setTimeout(refresh, QUIET_MS);
+      }
+
+      /** One refresh at a time: a burst of lines must not stack up requests on the service. */
+      async function refresh() {
+        if (refreshing) {
+          refreshAgain = true;
+          return;
+        }
+        refreshing = true;
+        refreshedAt = Date.now();
+        try {
           await loadTurns(true);
           await loadStats();
-        }, 1200);
+        } catch {
+          // The stream will bring the next line, and the next line asks again.
+        } finally {
+          refreshing = false;
+          if (refreshAgain) {
+            refreshAgain = false;
+            scheduleRefresh();
+          }
+        }
       }
 
       function connect() {
@@ -1960,6 +2267,9 @@
         state.days = Number(button.dataset.days);
         loadStats();
       });
+      $("scope").addEventListener("click", () => {
+        if (state.selected !== null) deselect();
+      });
       $("speeds").addEventListener("click", (ev) => {
         const button = ev.target.closest("button");
         if (button === null) return;
@@ -1968,18 +2278,26 @@
       });
       $("replay").addEventListener("click", startReplay);
       $("pause").addEventListener("click", () => {
-        if (replay.raf === 0) return;
-        replay.playing = !replay.playing;
-        $("pause").textContent = replay.playing ? "Pause" : "Resume";
+        if (!replay.active) return;
+        if (replay.playing) hold();
+        else resume();
       });
       $("scrub").addEventListener("input", () => {
-        if (replay.raf === 0) return;
+        if (!replay.active) {
+          if (replay.events.length === 0) return;
+          replay.active = true; // scrubbing after the replay ended takes the page back into it
+          setMode("replay");
+        }
+        hold();
         replay.at = (Number($("scrub").value) / 1000) * replay.dur;
+        replay.painted = -2;
         applyReplay();
       });
       $("turns").addEventListener("click", (ev) => {
         const row = ev.target.closest(".turn");
-        if (row !== null) select(row.dataset.id);
+        if (row === null) return;
+        if (row.dataset.id === state.selected) deselect();
+        else select(row.dataset.id);
       });
       $("chips").addEventListener("click", (ev) => {
         const chip = ev.target.closest(".chip");
@@ -2011,15 +2329,25 @@
           startReplay();
         }
         if (ev.key === " ") {
-          if (replay.raf !== 0) {
-            replay.playing = !replay.playing;
-            $("pause").textContent = replay.playing ? "Pause" : "Resume";
+          if (replay.active) {
+            if (replay.playing) hold();
+            else resume();
           }
           ev.preventDefault();
         }
-        if (ev.key === "Escape") stopReplay();
+        // Escape walks back one step at a time: out of the replay, then out of the turn.
+        if (ev.key === "Escape") {
+          if (replay.active) stopReplay();
+          else if (state.selected !== null) deselect();
+        }
       });
-      const relayout = () => buildEdges();
+      // Rebuilding the edges throws the painted ones away, so whatever the schema was
+      // showing — a turn, a replay frame, a period — has to be put back on top of them.
+      const relayout = () => {
+        buildEdges();
+        if (replay.active) applyReplay();
+        else paintSelection();
+      };
       window.addEventListener("resize", relayout);
       new ResizeObserver(relayout).observe($("schema"));
 
@@ -2028,7 +2356,7 @@
       await loadTurns(false);
       await loadStats();
       await loadStatus();
-      buildEdges();
+      relayout();
       connect();
       setInterval(paintStatus, 1000);
       setInterval(loadStatus, 5000);

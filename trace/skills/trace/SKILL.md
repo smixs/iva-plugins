@@ -41,8 +41,10 @@ Each line has exactly seven fields: `ts` (UTC), `turn`, `session`, `source`, `ki
 **Three key spaces of `turn`.** Before the turn exists it is the update key
 `tg:<chatId>:<messageId>`; after it starts it is the Eve turnId (`turn_3`, and `turn_3#planner`
 for a subagent step); a night turn (Rollup, digest, cron) has no turn key at all — its seam
-lines carry an empty `turn` with a session and a source. To stitch a chat turn take
-`turn.bound` and collect both keys; to stitch a night turn group by session.
+lines carry an empty `turn` with a session and a source. To stitch a chat turn take `turn.bound`
+and collect both keys. For a night turn the key is the session **and** the turnId: one session
+can hold several turns — the digest sends twice, a Rollup keeps its session across midnight — so
+a keyless seam line belongs to the latest turn of that session that had already started.
 
 ## How to open the viewer
 
@@ -55,10 +57,12 @@ open http://127.0.0.1:8726                         # then this
 ```
 
 The page has no input field: you write in Telegram and watch here. It shows equal tiles for
-the period (today / 7 / 14 days), the schema of Iva with the nodes and edges lighting up as
-events arrive, the list of turns for 14 days, the event feed of the selected turn as chips,
-and a Replay button that plays a turn again at real intervals with ×1/×2/×4. Keys: `j`/`k`
-move between turns, `r` replays, space pauses.
+the period (today / 7 / 14 days), the schema of Iva with the path of the selected turn lit
+across it, the list of turns for 14 days, the event feed of that turn as chips, and a Replay
+button that plays the turn again at real intervals with ×1/×2/×4. With a turn selected the
+boxes count that turn; let it go and they count the period — the section title says which.
+Keys: `j`/`k` move between turns, `r` replays, space pauses, `esc` steps back out of the
+replay and then out of the turn.
 
 When the agent is restarting the viewer stays up and says so in the status line — the journal
 is a file, not a service.
