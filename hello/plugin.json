@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hello",
+  "version": "0.1.0",
+  "description": "The smallest plugin that carries code: one skill, one tool that greets by name.",
+  "extensions": {
+    "sh.iva": {}
+  }
+}
