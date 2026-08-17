@@ -1,0 +1,15 @@
+{
+  "name": "iva-plugins",
+  "plugins": [
+    {
+      "name": "trace",
+      "source": "./trace",
+      "description": "Viewer for the turn journal: the schema of Iva with the path of a turn lit across it, the turn feed and a replay."
+    },
+    {
+      "name": "hello",
+      "source": "./hello",
+      "description": "The demo for plugin authors: the smallest plugin that carries code - one skill, one tool."
+    }
+  ]
+}
