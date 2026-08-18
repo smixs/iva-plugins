@@ -7,7 +7,7 @@
 //
 // `IVA_REPO` is an Iva checkout with `node_modules`; without it the test skips, because a
 // plugin repository is not required to have one at hand.
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
@@ -21,7 +21,7 @@ const EVE = IVA ? join(IVA, "node_modules/.bin/eve") : "";
 const SKIP = EVE && existsSync(EVE) ? false : "set IVA_REPO to an Iva checkout with node_modules";
 
 /** The plugin as it is published: no build output, no installed dependencies. */
-function stage(t) {
+function stage(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), "iva-hello-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   cpSync(PLUGIN, join(dir, "hello"), {

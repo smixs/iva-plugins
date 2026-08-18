@@ -2,6 +2,133 @@
 // schema node. Pure functions only — no fs, no http, no clock of its own. The contract is
 // `docs/trace.md` in the Iva repo; this file follows it and nothing else.
 
+/** The payload of a line, seen the only way a reader can see it: keys to unknown values. */
+export type Data = Record<string, unknown>;
+
+/** Where a line came from, as the reader of the file knows it. */
+export interface LineMeta {
+  readonly file?: string;
+  readonly line?: number;
+}
+
+/** One journal line, parsed. `event` is `kind.name`, the name the whole viewer speaks in. */
+export interface TraceEvent {
+  readonly ts: string;
+  readonly at: number;
+  readonly turn: string;
+  readonly session: string;
+  readonly source: string;
+  readonly kind: string;
+  readonly name: string;
+  readonly event: string;
+  readonly data: Data;
+  readonly file: string;
+  readonly line: number;
+}
+
+/** An event inside a stitched turn: the subagent it belongs to, and how deep it sits. */
+export interface TurnEvent extends TraceEvent {
+  readonly depth: number;
+  readonly subagent: string;
+}
+
+export type TurnKind = "chat" | "night";
+export type TurnStatus = "live" | "ok" | "failed" | "cancelled" | "blocked" | "dropped";
+
+/** What a turn did, in the units each seam measures itself in. */
+export interface Counts {
+  events: number;
+  steps: number;
+  toolCalls: number;
+  toolErrors: number;
+  memorySearch: number;
+  cardsFound: number;
+  cardsFoundKnown: boolean;
+  cardsWritten: number;
+  gateBlocked: number;
+  gateFlagged: number;
+  gateClean: number;
+  subagents: number;
+}
+
+export interface Tokens {
+  in: number;
+  out: number;
+  cacheRead: number;
+  cacheWrite: number;
+  costUsd: number;
+}
+
+export interface Flags {
+  blocked: boolean;
+  flagged: boolean;
+  failed: boolean;
+  cancelled: boolean;
+  stopped: boolean;
+  dropped: boolean;
+  delivered: boolean;
+  trimmed: boolean;
+}
+
+/** One stitched turn: its keys, its outcome, its numbers and every event that made it. */
+export interface Turn {
+  id: string;
+  kind: TurnKind;
+  source: string;
+  session: string;
+  turnKey: string;
+  updateKey: string;
+  chatKey: string;
+  startedAt: string;
+  endedAt: string;
+  at: number;
+  ms: number;
+  night: string;
+  status: TurnStatus;
+  title: string;
+  reply: string;
+  counts: Counts;
+  tokens: Tokens;
+  nodes: Record<string, number>;
+  flags: Flags;
+  events: TurnEvent[];
+}
+
+/** A turn without its events: what the list and the tiles carry. */
+export type TurnSummary = Omit<Turn, "events">;
+
+/** The tiles of a period. */
+export interface Stats {
+  period: number;
+  from: string;
+  to: string;
+  turns: number;
+  chat: number;
+  night: number;
+  events: number;
+  steps: number;
+  avgMs: number;
+  timedTurns: number;
+  toolCalls: number;
+  toolErrors: number;
+  memorySearch: number;
+  cardsFound: number;
+  cardsFoundKnown: boolean;
+  cardsWritten: number;
+  gateBlocked: number;
+  gateFlagged: number;
+  gateClean: number;
+  failed: number;
+  tokens: Tokens;
+  nodes: Record<string, number>;
+}
+
+/** How many cards a result carried, and whether that could be known at all. */
+export interface CardCount {
+  known: boolean;
+  count: number;
+}
+
 /** Sources that mark a night turn: it has no turn key, only a session. */
 export const NIGHT_SOURCES = new Set(["rollup", "digest", "cron"]);
 
@@ -18,34 +145,39 @@ const CALLBACK_KEY = /^tg:[^:]*:cb:/u;
 /** Two turn.bound lines claiming one turn key — refuse to guess. */
 const CONFLICT = Symbol("conflict");
 
-const str = (value) => (typeof value === "string" ? value : "");
-const num = (value) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+/** A bound key, or the mark that two lines claimed it. */
+type Bound = string | typeof CONFLICT;
+
+const str = (value: unknown): string => (typeof value === "string" ? value : "");
+const num = (value: unknown): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+/** A JSON object and nothing else: an array is not a payload, and neither is null. */
+const isRecord = (value: unknown): value is Data =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
 
 /**
  * One journal line to one event, or null. A broken line is skipped, never thrown: two
  * processes append to the file and a reader meets a half-written line at any moment.
  */
-export function parseLine(raw, meta) {
+export function parseLine(raw: unknown, meta?: LineMeta): TraceEvent | null {
   if (typeof raw !== "string") return null;
   const text = raw.trim();
   if (text.length === 0 || text[0] !== "{") return null;
-  let value;
+  let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
     return null;
   }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  if (!isRecord(value)) return null;
   const kind = str(value.kind);
   const name = str(value.name);
   const ts = str(value.ts);
   if (kind === "" || name === "" || ts === "") return null;
   const at = Date.parse(ts);
   if (!Number.isFinite(at)) return null;
-  const data =
-    value.data !== null && typeof value.data === "object" && !Array.isArray(value.data)
-      ? value.data
-      : {};
+  const data = isRecord(value.data) ? value.data : {};
   return {
     ts,
     at,
@@ -62,7 +194,7 @@ export function parseLine(raw, meta) {
 }
 
 /** `turn_3#planner` gives base `turn_3` and subagent `planner`. */
-export function splitTurn(turn) {
+export function splitTurn(turn: string): { base: string; subagent: string } {
   const hash = turn.indexOf("#");
   if (hash < 0) return { base: turn, subagent: "" };
   return { base: turn.slice(0, hash), subagent: turn.slice(hash + 1) };
@@ -73,7 +205,7 @@ export function splitTurn(turn) {
  * sort by `ts`. Ties break on file and line: a reader must land on the same order whatever
  * order it read the lines in.
  */
-export function compareEvents(a, b) {
+export function compareEvents(a: TraceEvent, b: TraceEvent): number {
   if (a.at !== b.at) return a.at - b.at;
   if (a.file !== b.file) return a.file < b.file ? -1 : 1;
   if (a.line !== b.line) return a.line - b.line;
@@ -82,13 +214,13 @@ export function compareEvents(a, b) {
   return a.session < b.session ? -1 : a.session > b.session ? 1 : 0;
 }
 
-function keepFirst(map, key, value) {
+function keepFirst(map: Map<string, Bound>, key: string, value: string): void {
   if (!map.has(key)) map.set(key, value);
   else if (map.get(key) !== value) map.set(key, CONFLICT);
 }
 
 /** Tool call to the schema node it belongs to. An unknown tool lands on the Tools group. */
-export function toolNode(toolName) {
+export function toolNode(toolName: string): string {
   switch (toolName) {
     case "memory_search":
       return "memory_search";
@@ -112,16 +244,14 @@ export function toolNode(toolName) {
   }
 }
 
-const actionTool = (action) =>
-  action !== null && typeof action === "object"
-    ? str(action.toolName) || str(action.name)
-    : "";
+const actionTool = (action: unknown): string =>
+  isRecord(action) ? str(action.toolName) || str(action.name) : "";
 
 /**
  * Schema nodes an event lights up. The first one is the primary: the feed and the replay
  * follow it, the rest only glow along (Vault behind memory_search, Telegram behind Bridge).
  */
-export function nodesForEvent(event, nightSource = "") {
+export function nodesForEvent(event: TraceEvent, nightSource = ""): string[] {
   const { kind, name, data } = event;
   const night = NIGHT_SOURCES.has(event.source) || nightSource !== "";
   // A night turn has a name of its own: Rollup assembles memory, a Report is the summary
@@ -179,24 +309,26 @@ export function nodesForEvent(event, nightSource = "") {
 }
 
 /** A memory_search result to how many cards came back. Content may be off; then it is unknown. */
-export function cardsInResult(result) {
+export function cardsInResult(result: unknown): CardCount {
   let value = result;
   if (typeof value === "string") {
+    const text = value;
     try {
-      value = JSON.parse(value);
+      value = JSON.parse(text);
     } catch {
-      const match = /"count"\s*:\s*(\d+)/u.exec(result);
+      const match = /"count"\s*:\s*(\d+)/u.exec(text);
       return match ? { known: true, count: Number(match[1]) } : { known: false, count: 0 };
     }
   }
   if (value === null || typeof value !== "object") return { known: false, count: 0 };
-  if (typeof value.count === "number" && Number.isFinite(value.count))
-    return { known: true, count: value.count };
-  if (Array.isArray(value.hits)) return { known: true, count: value.hits.length };
+  const box = value as Data;
+  if (typeof box.count === "number" && Number.isFinite(box.count))
+    return { known: true, count: box.count };
+  if (Array.isArray(box.hits)) return { known: true, count: box.hits.length };
   return { known: false, count: 0 };
 }
 
-function emptyCounts() {
+function emptyCounts(): Counts {
   return {
     events: 0,
     steps: 0,
@@ -213,11 +345,11 @@ function emptyCounts() {
   };
 }
 
-function emptyTokens() {
+function emptyTokens(): Tokens {
   return { in: 0, out: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
 }
 
-function newTurn(id, kind) {
+function newTurn(id: string, kind: TurnKind): Turn {
   return {
     id,
     kind,
@@ -251,9 +383,29 @@ function newTurn(id, kind) {
   };
 }
 
-function cap(text, limit) {
+function cap(text: string, limit: number): string {
   const flat = String(text).replace(/\s+/gu, " ").trim();
   return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+}
+
+/** Which turn a keyed line belongs to, and whether it came from a subagent. */
+interface Group {
+  id: string;
+  kind: TurnKind;
+  subagent: string;
+}
+
+/** The turns of one session in start order, as a keyless line looks them up. */
+interface SessionTurn {
+  at: number;
+  id: string;
+  kind: TurnKind;
+}
+
+interface Maps {
+  bind: Map<string, Bound>;
+  nightSource: Map<string, Bound>;
+  sessionTurns: Map<string, SessionTurn[]>;
 }
 
 /**
@@ -265,9 +417,9 @@ function cap(text, limit) {
  * neither is the pair (session, source). A keyless seam line joins the latest turn of its
  * session that had already started by `ts`.
  */
-function index(sorted) {
-  const bind = new Map(); // session + turnId (and turnId alone) to update key
-  const nightSource = new Map(); // session to rollup | digest | cron
+function index(sorted: readonly TraceEvent[]): Maps {
+  const bind = new Map<string, Bound>(); // session + turnId (and turnId alone) to update key
+  const nightSource = new Map<string, Bound>(); // session to rollup | digest | cron
   for (const event of sorted) {
     if (event.kind === "turn" && event.name === "bound") {
       const updateKey = str(event.data.updateKey);
@@ -280,7 +432,7 @@ function index(sorted) {
       keepFirst(nightSource, event.session, event.source);
   }
   // Turns of each session in start order: this is what a keyless line looks its turn up in.
-  const sessionTurns = new Map();
+  const sessionTurns = new Map<string, SessionTurn[]>();
   for (const event of sorted) {
     if (event.session === "") continue;
     const keyed = keyedGroup(event, bind, nightSource);
@@ -294,7 +446,11 @@ function index(sorted) {
 }
 
 /** The group of a line that carries a turn key, or null when it carries none. */
-function keyedGroup(event, bind, nightSource) {
+function keyedGroup(
+  event: TraceEvent,
+  bind: Map<string, Bound>,
+  nightSource: Map<string, Bound>,
+): Group | null {
   const { base, subagent } = splitTurn(event.turn);
   if (base === "" || CALLBACK_KEY.test(base)) return null;
   if (base.startsWith(UPDATE_PREFIX)) return { id: `u:${base}`, kind: "chat", subagent };
@@ -313,13 +469,13 @@ function keyedGroup(event, bind, nightSource) {
   return { id: `t:${base}`, kind: "chat", subagent };
 }
 
-function groupOf(event, { bind, nightSource, sessionTurns }) {
+function groupOf(event: TraceEvent, { bind, nightSource, sessionTurns }: Maps): Group | null {
   const keyed = keyedGroup(event, bind, nightSource);
   if (keyed !== null) return keyed;
   const { base } = splitTurn(event.turn);
   if (CALLBACK_KEY.test(base)) return null; // the Bridge alone sees a callback: it has no turn
   if (event.session === "") return null; // a verdict outside a turn: nothing to attach it to
-  let landed = null;
+  let landed: SessionTurn | null = null;
   for (const item of sessionTurns.get(event.session) ?? [])
     if (item.at <= event.at) landed = item;
   if (landed !== null) return { id: landed.id, kind: landed.kind, subagent: "" };
@@ -327,7 +483,7 @@ function groupOf(event, { bind, nightSource, sessionTurns }) {
   return { id: `s:${event.session}`, kind: night ? "night" : "chat", subagent: "" };
 }
 
-function absorb(turn, event, subagent, night) {
+function absorb(turn: Turn, event: TraceEvent, subagent: string, night: string): void {
   const counts = turn.counts;
   counts.events += 1;
   const { base } = splitTurn(event.turn);
@@ -360,7 +516,7 @@ function absorb(turn, event, subagent, night) {
       break;
     case "inbound.accepted":
       if (turn.title === "" && Array.isArray(event.data.context) && event.data.context[0])
-        turn.title = cap(event.data.context[0], 160);
+        turn.title = cap(String(event.data.context[0]), 160);
       break;
     case "gate.inbound":
     case "gate.web":
@@ -382,7 +538,7 @@ function absorb(turn, event, subagent, night) {
     case "eve.step.completed": {
       counts.steps += 1;
       const usage = event.data.usage;
-      if (usage !== null && typeof usage === "object") {
+      if (isRecord(usage)) {
         turn.tokens.in += num(usage.in);
         turn.tokens.out += num(usage.out);
         turn.tokens.cacheRead += num(usage.cacheRead);
@@ -417,21 +573,28 @@ function absorb(turn, event, subagent, night) {
   if (event.kind === "stop" && event.name !== "idle") turn.flags.stopped = true;
 }
 
+/** One tool call, as the two lines that describe it leave it. */
+interface Call {
+  tool: string;
+  cards: CardCount;
+  error: boolean;
+}
+
 /**
  * Tool calls are counted by callId, not by line: one call shows up twice (requested, result)
  * and a permutation of the lines must not change the number.
  */
-function collectCalls(turn) {
-  const calls = new Map();
-  const take = (id) =>
+function collectCalls(turn: Turn): Map<string, Call> {
+  const calls = new Map<string, Call>();
+  const take = (id: string): Call =>
     calls.get(id) ?? { tool: "", cards: { known: false, count: 0 }, error: false };
   for (const event of turn.events) {
     if (event.event === "eve.actions.requested") {
       const actions = Array.isArray(event.data.actions) ? event.data.actions : [];
-      actions.forEach((action, i) => {
+      actions.forEach((action: unknown, i: number) => {
         const tool = actionTool(action);
         const callId =
-          (action !== null && typeof action === "object" && str(action.callId)) ||
+          (isRecord(action) && str(action.callId)) ||
           `${event.turn}:${num(event.data.stepIndex)}:${i}:${tool}`;
         const call = take(callId);
         if (call.tool === "") call.tool = tool;
@@ -471,10 +634,10 @@ const TOOL_NODES = [
  * Vault counts cards, a Gate counts verdicts (one line is one verdict), and the seams that
  * pass a turn through — Bridge, Inbound pipeline, Outbox — count the events they wrote.
  */
-function measure(turn, calls) {
+function measure(turn: Turn, calls: Map<string, Call>): void {
   const nodes = turn.nodes;
   const counts = turn.counts;
-  const perTool = new Map();
+  const perTool = new Map<string, number>();
   for (const call of calls.values()) {
     const node = toolNode(call.tool);
     perTool.set(node, (perTool.get(node) ?? 0) + 1);
@@ -487,7 +650,7 @@ function measure(turn, calls) {
   if ("vault" in nodes) nodes.vault = counts.cardsFound + counts.cardsWritten;
 }
 
-function countTools(turn, calls) {
+function countTools(turn: Turn, calls: Map<string, Call>): void {
   const counts = turn.counts;
   counts.toolCalls = calls.size;
   for (const call of calls.values()) {
@@ -515,7 +678,7 @@ const TERMINAL = new Set([
   "bridge.rejected",
 ]);
 
-function finish(turn) {
+function finish(turn: Turn): Turn {
   const first = turn.events[0];
   const last = turn.events[turn.events.length - 1];
   turn.startedAt = first.ts;
@@ -548,11 +711,14 @@ function finish(turn) {
  * line with nothing to attach it to (a Bridge callback, a verdict outside a turn) goes to
  * `unattached` instead of getting a turn invented for it.
  */
-export function stitch(events) {
+export function stitch(events: readonly TraceEvent[]): {
+  turns: Turn[];
+  unattached: TraceEvent[];
+} {
   const sorted = [...events].sort(compareEvents);
   const maps = index(sorted);
-  const turns = new Map();
-  const unattached = [];
+  const turns = new Map<string, Turn>();
+  const unattached: TraceEvent[] = [];
   for (const event of sorted) {
     const group = groupOf(event, maps);
     if (group === null) {
@@ -579,7 +745,7 @@ export function stitch(events) {
 }
 
 /** A turn without its events: the list and the tiles never need the payload. */
-export function turnSummary(turn) {
+export function turnSummary(turn: Turn): TurnSummary {
   const { events, ...rest } = turn;
   return rest;
 }
@@ -588,13 +754,16 @@ export function turnSummary(turn) {
  * Tiles for a period. `days` counts back from `today` inclusive: 1 is today, 7 a week.
  * Turns are placed by the day they started, in the same local day the file names use.
  */
-export function statsFor(turns, { today, days, dayOf }) {
+export function statsFor(
+  turns: readonly Turn[],
+  { today, days, dayOf }: { today: string; days: number; dayOf: (at: number) => string },
+): Stats {
   const from = dayShift(today, -(days - 1));
   const picked = turns.filter((turn) => {
     const day = dayOf(turn.at);
     return day >= from && day <= today;
   });
-  const totals = {
+  const totals: Stats = {
     period: days,
     from,
     to: today,
@@ -652,9 +821,9 @@ export function statsFor(turns, { today, days, dayOf }) {
 }
 
 /** `2026-08-17` shifted by whole days, without leaving the day-name space. */
-export function dayShift(day, delta) {
+export function dayShift(day: string, delta: number): string {
   const [y, m, d] = day.split("-").map(Number);
   const moved = new Date(Date.UTC(y, m - 1, d) + delta * 86400000);
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad = (n: number): string => String(n).padStart(2, "0");
   return `${moved.getUTCFullYear()}-${pad(moved.getUTCMonth() + 1)}-${pad(moved.getUTCDate())}`;
 }

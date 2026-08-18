@@ -15,16 +15,24 @@ import {
   cardsInResult,
   dayShift,
   nodesForEvent,
-} from "../sh.iva/services/viewer/journal.mjs";
-import { Store, dayOf } from "../sh.iva/services/viewer/store.mjs";
-import { fixtureFiles, fixturePlan, writeFixture } from "./fixture.mjs";
+} from "../sh.iva/services/viewer/journal.ts";
+import type { TraceEvent, Turn } from "../sh.iva/services/viewer/journal.ts";
+import { Store, dayOf } from "../sh.iva/services/viewer/store.ts";
+import { fixtureFiles, fixturePlan, writeFixture } from "./fixture.ts";
+import type { Plan } from "./fixture.ts";
 
 const SEED = Number(process.env.TRACE_SEED ?? 20260817);
 const NOW = Date.parse("2026-08-17T12:00:00Z");
 const TODAY = dayOf(NOW);
 
+/** A day file as the fixture holds it: the day name and its lines. */
+type DayFile = [string, string[]];
+
+/** A turn as the fixture planned it, chat or night. */
+type Planned = Plan["chat"][number] | Plan["night"][number];
+
 /** Tiny deterministic PRNG: a failing case is replayable from the printed seed. */
-function rng(seed) {
+function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -34,7 +42,7 @@ function rng(seed) {
   };
 }
 
-function shuffled(items, random) {
+function shuffled<T>(items: readonly T[], random: () => number): T[] {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i -= 1) {
     const j = Math.floor(random() * (i + 1));
@@ -44,11 +52,12 @@ function shuffled(items, random) {
 }
 
 /** Every line of the fixture, day by day, exactly as the files hold them. */
-const fixtureLines = (now = NOW) => [...fixtureFiles(now)].map(([day, lines]) => [day, lines]);
+const fixtureLines = (now = NOW): DayFile[] =>
+  [...fixtureFiles(now)].map(([day, lines]) => [day, lines]);
 
 /** Lines to events, the way a reader parses a file: line numbers included. */
-function eventsOf(files) {
-  const events = [];
+function eventsOf(files: readonly DayFile[]): TraceEvent[] {
+  const events: TraceEvent[] = [];
   for (const [day, lines] of files)
     lines.forEach((line, i) => {
       const event = parseLine(line, { file: day, line: i + 1 });
@@ -59,7 +68,7 @@ function eventsOf(files) {
 
 const fixtureEvents = (now = NOW) => eventsOf(fixtureLines(now));
 
-const shape = (turns) =>
+const shape = (turns: readonly Turn[]) =>
   turns.map((turn) => ({
     id: turn.id,
     kind: turn.kind,
@@ -79,6 +88,7 @@ test("a line becomes an event only when it carries the seven fields", () => {
     '{"ts":"2026-08-17T09:00:00.000Z","turn":"turn_0","session":"s1","source":"telegram","kind":"eve","name":"turn.started","data":{"sequence":1}}',
     { file: "2026-08-17", line: 3 },
   );
+  assert.ok(ok !== null);
   assert.equal(ok.event, "eve.turn.started");
   assert.equal(ok.at, Date.parse("2026-08-17T09:00:00.000Z"));
   assert.equal(ok.line, 3);
@@ -101,6 +111,7 @@ test("a line becomes an event only when it carries the seven fields", () => {
 
   // data of a wrong type degrades to an empty object, it never throws
   const odd = parseLine('{"ts":"2026-08-17T09:00:00Z","kind":"eve","name":"x","data":7}', {});
+  assert.ok(odd !== null);
   assert.deepEqual(odd.data, {});
   assert.equal(odd.source, "unknown");
 });
@@ -135,7 +146,7 @@ test("broken lines written into the middle of the files change nothing", () => {
   // of these in the middle of a day, not at the end of it.
   for (let round = 0; round < 8; round += 1) {
     const random = rng(SEED + 500 + round);
-    const files = fixtureLines().map(([day, lines]) => {
+    const files: DayFile[] = fixtureLines().map(([day, lines]) => {
       const copy = [...lines];
       const torn = copy[Math.floor(random() * copy.length)];
       const junk = [
@@ -170,7 +181,7 @@ test("every turn the fixture scripted comes back, and nothing else", () => {
   const byId = new Map(turns.map((turn) => [turn.id, turn]));
   for (const want of planned) {
     const turn = byId.get(want.id);
-    assert.ok(turn !== undefined, `no turn for ${want.id}`);
+    assert.ok(turn, `no turn for ${want.id}`);
     assert.equal(turn.status, want.status, want.id);
     assert.equal(turn.counts.steps, want.steps, `steps of ${want.id}`);
     assert.equal(turn.counts.toolCalls, want.tools.length, `tool calls of ${want.id}`);
@@ -179,7 +190,7 @@ test("every turn the fixture scripted comes back, and nothing else", () => {
     assert.equal(turn.counts.cardsWritten, want.cardsWritten, `cards written by ${want.id}`);
     assert.equal(turn.counts.cardsFound, want.cardsFound, `cards found by ${want.id}`);
     // the number on a tool node is the number of calls of that tool, mapped by toolNode()
-    const perNode = new Map();
+    const perNode = new Map<string, number>();
     for (const tool of want.tools) {
       const node = toolNode(tool);
       perNode.set(node, (perNode.get(node) ?? 0) + 1);
@@ -199,7 +210,7 @@ test("the shapes of a real day read the way the contract describes them", () => 
   const byId = new Map(turns.map((turn) => [turn.id, turn]));
 
   // a chat turn: bound by turn.bound, so Bridge lines and Eve lines land in one turn
-  const plain = byId.get("u:tg:88123456:5121");
+  const plain = byId.get("u:tg:88123456:5121")!;
   assert.equal(plain.kind, "chat");
   assert.equal(plain.source, "telegram");
   assert.equal(plain.turnKey, "turn_0");
@@ -208,21 +219,21 @@ test("the shapes of a real day read the way the contract describes them", () => 
   assert.equal(plain.flags.delivered, true);
 
   // the blocked turn never became an Eve turn: a verdict plus a service reply, no Outbox
-  const blocked = byId.get("u:tg:88123456:5141");
+  const blocked = byId.get("u:tg:88123456:5141")!;
   assert.equal(blocked.status, "blocked");
   assert.equal(blocked.counts.gateBlocked, 1);
   assert.equal(blocked.counts.steps, 0);
   assert.equal(blocked.flags.delivered, false);
 
   // the failed turn: a step failed and the Outbox failed too
-  const failed = byId.get("u:tg:88123456:5144");
+  const failed = byId.get("u:tg:88123456:5144")!;
   assert.equal(failed.status, "failed");
   assert.equal(failed.flags.trimmed, true); // the trimmed bash result
-  assert.equal(byId.get("u:tg:88123456:5163").status, "cancelled"); // Stop came in
-  assert.equal(byId.get("u:tg:88123456:5164").status, "live"); // no terminal event yet
+  assert.equal(byId.get("u:tg:88123456:5163")!.status, "cancelled"); // Stop came in
+  assert.equal(byId.get("u:tg:88123456:5164")!.status, "live"); // no terminal event yet
 
   // the subagent: its lines carry the parent turn key with a suffix and nest under it
-  const planner = byId.get("u:tg:88123456:5142");
+  const planner = byId.get("u:tg:88123456:5142")!;
   assert.equal(planner.counts.subagents, 1);
   const nested = planner.events.filter((event) => event.depth === 1);
   assert.equal(nested.length, 5);
@@ -282,7 +293,8 @@ test("the tiles count the fixture the way the journal reads", () => {
   const planned = [...plan.chat, ...plan.night];
   const all = statsFor(turns, { today: TODAY, days: 14, dayOf });
 
-  const sum = (pick) => planned.reduce((total, item) => total + pick(item), 0);
+  const sum = (pick: (item: Planned) => number): number =>
+    planned.reduce((total, item) => total + pick(item), 0);
   assert.equal(all.turns, planned.length);
   assert.equal(all.chat, plan.chat.length);
   assert.equal(all.night, plan.night.length);
@@ -356,8 +368,14 @@ test("turn keys, tools and card counts map by their own rules", () => {
 
 test("an event knows which nodes of the schema it lights", () => {
   const at = "2026-08-17T09:00:00.000Z";
-  const make = (kind, name, data = {}, source = "telegram", turn = "turn_0") =>
-    parseLine(JSON.stringify({ ts: at, turn, session: "s", source, kind, name, data }), {});
+  const make = (
+    kind: string,
+    name: string,
+    data: Record<string, unknown> = {},
+    source = "telegram",
+    turn = "turn_0",
+  ): TraceEvent =>
+    parseLine(JSON.stringify({ ts: at, turn, session: "s", source, kind, name, data }), {})!;
 
   assert.deepEqual(nodesForEvent(make("bridge", "admitted")), ["bridge", "telegram_in"]);
   assert.deepEqual(nodesForEvent(make("gate", "inbound")), ["gate_in", "inbound"]);
@@ -392,7 +410,7 @@ test("an event knows which nodes of the schema it lights", () => {
   ]);
   assert.deepEqual(nodesForEvent(make("nonsense", "whatever")), []);
   // Brain is not in the journal: no event lights it, so the page must not print a number on it
-  const lit = new Set();
+  const lit = new Set<string>();
   for (const event of fixtureEvents()) for (const node of nodesForEvent(event)) lit.add(node);
   assert.ok(!lit.has("brain"));
 });

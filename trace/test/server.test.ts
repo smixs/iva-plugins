@@ -7,18 +7,24 @@ import { mkdtempSync, rmSync, appendFileSync, readdirSync, statSync } from "node
 import { tmpdir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { get } from "node:http";
-import { createViewer, probeAgent, agentHealthUrl } from "../sh.iva/services/viewer/server.mjs";
-import { writeFixture, fixturePlan } from "./fixture.mjs";
-import { traceDir, dayOf } from "../sh.iva/services/viewer/store.mjs";
+import { createViewer, probeAgent, agentHealthUrl } from "../sh.iva/services/viewer/server.ts";
+import type { Env, Probe } from "../sh.iva/services/viewer/server.ts";
+import { writeFixture, fixturePlan } from "./fixture.ts";
+import { traceDir, dayOf } from "../sh.iva/services/viewer/store.ts";
+import type { AddressInfo } from "node:net";
 
 const NOW = Date.parse("2026-08-17T12:00:00Z");
 const TODAY = dayOf(NOW);
 const PLAN = fixturePlan(NOW);
 const TURNS = PLAN.chat.length + PLAN.night.length;
 
-function snapshot(dir) {
-  const out = [];
-  const walk = (at, prefix) => {
+// The answers come back as JSON, so a case here knows only what it reads out of them.
+type TurnRow = { id: string; kind: string; at: number; counts: { subagents: number; events: number } };
+type EventRow = { ts: string; nodes: unknown; depth: number; subagent: string };
+
+function snapshot(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (at: string, prefix: string): void => {
     for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) =>
       a.name < b.name ? -1 : 1,
     )) {
@@ -32,7 +38,7 @@ function snapshot(dir) {
 }
 
 /** A viewer on a temporary journal, bound to a free loopback port. */
-async function serve({ probe, env } = {}) {
+async function serve({ probe, env }: { probe?: Probe; env?: Env } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "trace-http-"));
   writeFixture(dir, NOW);
   const viewer = createViewer({
@@ -41,15 +47,15 @@ async function serve({ probe, env } = {}) {
     probe: probe ?? (async () => ({ agent: "alive", status: 200 })),
     env: env ?? {},
   });
-  await new Promise((resolve) => viewer.server.listen(0, "127.0.0.1", resolve));
-  const { port, address } = viewer.server.address();
+  await new Promise<void>((resolve) => viewer.server.listen(0, "127.0.0.1", () => resolve()));
+  const { port, address } = viewer.server.address() as AddressInfo;
   return {
     dir,
     port,
     address,
     viewer,
-    url: (path) => `http://127.0.0.1:${port}${path}`,
-    async json(path) {
+    url: (path: string) => `http://127.0.0.1:${port}${path}`,
+    async json(path: string) {
       const res = await fetch(`http://127.0.0.1:${port}${path}`);
       return { status: res.status, body: await res.json() };
     },
@@ -72,7 +78,7 @@ test("the service listens on loopback only", async () => {
       fetch(`http://${external.address}:${app.port}/api/turns`, {
         signal: AbortSignal.timeout(2500),
       }),
-      (error) => {
+      (error: { name?: string; code?: string; cause?: { code?: string } }) => {
         const code = error?.cause?.code ?? error?.code ?? error?.name;
         return code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "TimeoutError";
       },
@@ -85,7 +91,7 @@ test("the service listens on loopback only", async () => {
 test("a request for another host name is refused", async () => {
   const app = await serve();
   // fetch() refuses to set Host, so this one goes over node:http on purpose
-  const ask = (host) =>
+  const ask = (host: string) =>
     new Promise((resolve, reject) => {
       const request = get(
         { host: "127.0.0.1", port: app.port, path: "/api/turns", headers: { host } },
@@ -112,7 +118,7 @@ test("only GET and HEAD are served", async () => {
     assert.equal(res.status, 405);
     const head = await fetch(app.url("/"), { method: "HEAD" });
     assert.equal(head.status, 200);
-    assert.match(head.headers.get("content-type"), /text\/html/u);
+    assert.match(head.headers.get("content-type") ?? "", /text\/html/u);
   } finally {
     await app.close();
   }
@@ -144,7 +150,7 @@ test("the turns route stitches the fixture and hides nothing", async () => {
     // newest first, and the payload of a summary stays a summary
     assert.ok(body.turns[0].at >= body.turns[1].at);
     assert.equal(body.turns[0].events, undefined);
-    assert.ok(body.turns.some((turn) => turn.kind === "night"));
+    assert.ok(body.turns.some((turn: TurnRow) => turn.kind === "night"));
   } finally {
     await app.close();
   }
@@ -154,15 +160,17 @@ test("one turn comes back with its events in time order", async () => {
   const app = await serve();
   try {
     const list = await app.json("/api/turns");
-    const target = list.body.turns.find((turn) => turn.counts.subagents > 0);
+    const target: TurnRow = list.body.turns.find((turn: TurnRow) => turn.counts.subagents > 0);
     const { status, body } = await app.json(`/api/turn?id=${encodeURIComponent(target.id)}`);
     assert.equal(status, 200);
     assert.equal(body.turn.id, target.id);
     assert.equal(body.events.length, target.counts.events);
-    const times = body.events.map((event) => Date.parse(event.ts));
-    assert.deepEqual(times, [...times].sort((a, b) => a - b));
-    assert.ok(body.events.every((event) => Array.isArray(event.nodes)));
-    assert.ok(body.events.some((event) => event.depth === 1 && event.subagent === "planner"));
+    const times = body.events.map((event: EventRow) => Date.parse(event.ts));
+    assert.deepEqual(times, [...times].sort((a: number, b: number) => a - b));
+    assert.ok(body.events.every((event: EventRow) => Array.isArray(event.nodes)));
+    assert.ok(
+      body.events.some((event: EventRow) => event.depth === 1 && event.subagent === "planner"),
+    );
 
     const missing = await app.json("/api/turn?id=nope");
     assert.equal(missing.status, 404);
@@ -236,12 +244,15 @@ test("the health probe reads a refused connection as a restarting agent", async 
 test("the stream delivers a line appended after the client connected", async () => {
   const app = await serve();
   try {
-    const frames = [];
+    const frames: string[] = [];
     const request = get(app.url("/api/stream"), (res) => {
       res.setEncoding("utf8");
-      res.on("data", (chunk) => frames.push(chunk));
+      res.on("data", (chunk: string) => frames.push(chunk));
     });
-    const waitFor = async (match, timeoutMs) => {
+    const waitFor = async (
+      match: (text: string) => boolean,
+      timeoutMs: number,
+    ): Promise<string | null> => {
       const until = Date.now() + timeoutMs;
       while (Date.now() < until) {
         const text = frames.join("");
@@ -251,7 +262,7 @@ test("the stream delivers a line appended after the client connected", async () 
       return null;
     };
     const hello = await waitFor((text) => text.includes("event: hello"), 3000);
-    assert.ok(hello !== null, "no hello frame");
+    assert.ok(hello, "no hello frame");
     assert.match(hello, /"day":"2026-08-17"/u);
 
     appendFileSync(
@@ -269,8 +280,8 @@ test("the stream delivers a line appended after the client connected", async () 
     // a broken line right behind it must not stop the stream
     appendFileSync(join(traceDir(app.dir), `${TODAY}.jsonl`), '{"ts":"half\n');
     const line = await waitFor((text) => text.includes("event: line"), 4000);
-    assert.ok(line !== null, "no line frame");
-    const payload = JSON.parse(/event: line\ndata: (.*)\n/u.exec(line)[1]);
+    assert.ok(line, "no line frame");
+    const payload = JSON.parse(/event: line\ndata: (.*)\n/u.exec(line)![1]);
     assert.equal(payload.event, "bridge.admitted");
     assert.deepEqual(payload.nodes, ["bridge", "telegram_in"]);
     request.destroy();

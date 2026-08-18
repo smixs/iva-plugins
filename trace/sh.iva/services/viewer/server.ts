@@ -2,14 +2,16 @@
 // Zero dependencies, loopback only, read-only on the journal.
 //
 // Env (contract of a plugin service): IVA_SERVICE_PORT, IVA_DATA_DIR, PLUGIN_ROOT, PLUGIN_DATA.
-// By hand: IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/path/to/data node server.mjs
+// By hand: IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/path/to/data node server.ts
 
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Store, Tail, traceDir, dayOf, currentDay } from "./store.mjs";
-import { stitch, statsFor, turnSummary, nodesForEvent } from "./journal.mjs";
+import type { AddressInfo } from "node:net";
+import { Store, Tail, traceDir, dayOf, currentDay } from "./store.ts";
+import { stitch, statsFor, turnSummary, nodesForEvent } from "./journal.ts";
+import type { Stats, TraceEvent, Turn } from "./journal.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOST = "127.0.0.1"; // never anything else: the journal is personal data behind SSH
@@ -18,7 +20,29 @@ const POLL_MS = 700;
 const PROBE_TTL_MS = 3000;
 const KEEPALIVE_MS = 15000;
 
-export function agentHealthUrl(env = process.env) {
+/** The environment as a service reads it: names to values, some of them missing. */
+export type Env = Record<string, string | undefined>;
+
+/** Whether the agent answers, and with what. */
+export interface AgentHealth {
+  agent: "alive" | "unreachable" | "unknown";
+  status: number;
+}
+
+/** What the probe needs of `fetch`: a URL in, a status out. */
+export type Fetcher = (url: string, init?: RequestInit) => Promise<{ status: number }>;
+
+/** How the viewer asks about the agent. */
+export type Probe = (url: string) => Promise<AgentHealth>;
+
+/** What a failed `fetch` looks like from outside: a name, and a code on it or on its cause. */
+interface FetchFault {
+  name?: string;
+  code?: string;
+  cause?: { code?: string };
+}
+
+export function agentHealthUrl(env: Env = process.env): string {
   const port = env.IVA_PORT ?? "8723";
   return `http://127.0.0.1:${port}/eve/v1/health`;
 }
@@ -28,7 +52,7 @@ export function agentHealthUrl(env = process.env) {
  * listens, not whether the viewer may talk to it. No listener means "unreachable" (the agent
  * is restarting); anything stranger means "unknown" — the viewer never guesses green.
  */
-export async function probeAgent(url, fetchImpl = fetch) {
+export async function probeAgent(url: string, fetchImpl: Fetcher = fetch): Promise<AgentHealth> {
   try {
     const response = await fetchImpl(url, {
       signal: AbortSignal.timeout(1200),
@@ -36,16 +60,17 @@ export async function probeAgent(url, fetchImpl = fetch) {
     });
     return { agent: "alive", status: response.status };
   } catch (error) {
-    const code = error?.cause?.code ?? error?.code ?? "";
+    const fault = error as FetchFault | null;
+    const code = fault?.cause?.code ?? fault?.code ?? "";
     if (code === "ECONNREFUSED" || code === "ECONNRESET" || code === "EHOSTUNREACH")
       return { agent: "unreachable", status: 0 };
-    if (error?.name === "TimeoutError" || code === "ETIMEDOUT")
+    if (fault?.name === "TimeoutError" || code === "ETIMEDOUT")
       return { agent: "unreachable", status: 0 };
     return { agent: "unknown", status: 0 };
   }
 }
 
-function sendJson(res, status, body) {
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
@@ -60,22 +85,44 @@ function sendJson(res, status, body) {
  * A loopback service still has one remote attack: a page on the internet resolving its own
  * name to 127.0.0.1 and reading the answers. Only loopback names are served.
  */
-function localHost(header) {
+function localHost(header: string | undefined): boolean {
   if (header === undefined) return true;
   const host = header.replace(/:\d+$/u, "").replace(/^\[|\]$/gu, "").toLowerCase();
   return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "";
 }
 
-export function createViewer({ dataDir, now = () => Date.now(), probe = probeAgent, env = process.env }) {
+/** The stitched window, held against the fingerprint it was built from. */
+interface Model {
+  stamp: string;
+  turns: Turn[];
+  unattached: TraceEvent[];
+  byId: Map<string, Turn>;
+  stats: Map<string, Stats>;
+}
+
+export function createViewer({
+  dataDir,
+  now = () => Date.now(),
+  probe = probeAgent,
+  env = process.env,
+}: {
+  dataDir: string;
+  now?: () => number;
+  probe?: Probe;
+  env?: Env;
+}) {
   const store = new Store({ dataDir, now });
-  const clients = new Set();
+  const clients = new Set<ServerResponse>();
   const page = { text: "", mtimeMs: 0 };
-  let cachedProbe = { at: 0, value: { agent: "unknown", status: 0 } };
-  let tail = null;
-  let timer = null;
+  let cachedProbe: { at: number; value: AgentHealth } = {
+    at: 0,
+    value: { agent: "unknown", status: 0 },
+  };
+  let tail: Tail | null = null;
+  let timer: NodeJS.Timeout | null = null;
 
   const indexPath = join(HERE, "index.html");
-  const readPage = () => {
+  const readPage = (): string => {
     const info = statSync(indexPath);
     if (page.mtimeMs !== info.mtimeMs) {
       page.text = readFileSync(indexPath, "utf8");
@@ -90,10 +137,10 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
    * against the fingerprint of the day files and rebuilt only when one of them moved. Purely a
    * memory of what was read — the journal is still never written to.
    */
-  let stitched = { stamp: "", turns: null, unattached: [], byId: new Map(), stats: new Map() };
-  const model = () => {
+  let stitched: Model | null = null;
+  const model = (): Model => {
     const stamp = store.stamp();
-    if (stitched.turns !== null && stitched.stamp === stamp) return stitched;
+    if (stitched !== null && stitched.stamp === stamp) return stitched;
     const { turns, unattached } = stitch(store.events());
     stitched = {
       stamp,
@@ -106,7 +153,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
   };
 
   /** Tiles of one period, held against the same fingerprint as the model. */
-  const stats = (days, today) => {
+  const stats = (days: number, today: string): Stats => {
     const current = model();
     const key = `${today}|${days}`;
     const hit = current.stats.get(key);
@@ -116,7 +163,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     return value;
   };
 
-  const health = async () => {
+  const health = async (): Promise<AgentHealth> => {
     const at = now();
     if (at - cachedProbe.at < PROBE_TTL_MS) return cachedProbe.value;
     const value = await probe(agentHealthUrl(env));
@@ -124,7 +171,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     return value;
   };
 
-  const journalFile = () => {
+  const journalFile = (): { day: string; path: string; bytes: number } => {
     const day = currentDay(traceDir(dataDir), now());
     const path = join(traceDir(dataDir), `${day}.jsonl`);
     let bytes = -1;
@@ -136,12 +183,12 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     return { day, path, bytes };
   };
 
-  const broadcast = (name, payload) => {
+  const broadcast = (name: string, payload: unknown): void => {
     const frame = `event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`;
     for (const client of clients) client.write(frame);
   };
 
-  const tick = () => {
+  const tick = (): void => {
     if (tail === null) return;
     const { rollover, day, events } = tail.poll();
     if (rollover) broadcast("rollover", { day });
@@ -149,7 +196,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
       broadcast("line", { ...event, nodes: nodesForEvent(event) });
   };
 
-  const startPolling = () => {
+  const startPolling = (): void => {
     if (timer !== null) return;
     tail = new Tail({ dataDir, now });
     timer = setInterval(() => {
@@ -162,7 +209,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     timer.unref?.();
   };
 
-  const stopPolling = () => {
+  const stopPolling = (): void => {
     if (timer === null) return;
     clearInterval(timer);
     timer = null;
@@ -183,11 +230,12 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
     try {
       route(url, req, res);
     } catch (error) {
-      sendJson(res, 500, { error: String(error?.message ?? error) });
+      const problem = error as { message?: unknown } | null;
+      sendJson(res, 500, { error: String(problem?.message ?? error) });
     }
   });
 
-  function route(url, req, res) {
+  function route(url: URL, req: IncomingMessage, res: ServerResponse): void {
     const path = url.pathname;
     if (path === "/" || path === "/index.html") {
       const text = readPage();
@@ -249,7 +297,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
       startPolling();
       const beat = setInterval(() => res.write(": beat\n\n"), KEEPALIVE_MS);
       beat.unref?.();
-      const drop = () => {
+      const drop = (): void => {
         clearInterval(beat);
         clients.delete(res);
         if (clients.size === 0) stopPolling();
@@ -265,7 +313,7 @@ export function createViewer({ dataDir, now = () => Date.now(), probe = probeAge
   return { server, model, stats, health, journalFile, store };
 }
 
-export function main(env = process.env) {
+export function main(env: Env = process.env) {
   const dataDir = env.IVA_DATA_DIR ?? "";
   if (dataDir === "") {
     process.stderr.write("trace viewer: IVA_DATA_DIR is not set\n");
@@ -274,12 +322,12 @@ export function main(env = process.env) {
   const port = Number(env.IVA_SERVICE_PORT ?? "8726");
   const viewer = createViewer({ dataDir, env });
   viewer.server.listen(port, HOST, () => {
-    const bound = viewer.server.address();
+    const bound = viewer.server.address() as AddressInfo;
     process.stdout.write(
       `trace viewer on http://${HOST}:${bound.port} — journal ${traceDir(dataDir)}\n`,
     );
   });
-  const bye = () => {
+  const bye = (): void => {
     viewer.server.close();
     process.exit(0);
   };

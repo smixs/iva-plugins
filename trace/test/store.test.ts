@@ -17,14 +17,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store, Tail, listDays, currentDay, dayOf, traceDir } from "../sh.iva/services/viewer/store.mjs";
-import { writeFixture } from "./fixture.mjs";
+import { Store, Tail, listDays, currentDay, dayOf, traceDir } from "../sh.iva/services/viewer/store.ts";
+import { writeFixture } from "./fixture.ts";
 
 const NOW = Date.parse("2026-08-17T12:00:00Z");
 const TODAY = dayOf(NOW);
 const TOMORROW = dayOf(NOW + 86400000);
 
-const line = (ts, kind, name, extra = {}) =>
+const line = (ts: number, kind: string, name: string, extra: Record<string, unknown> = {}): string =>
   `${JSON.stringify({
     ts: new Date(ts).toISOString(),
     turn: "turn_0",
@@ -36,16 +36,16 @@ const line = (ts, kind, name, extra = {}) =>
     ...extra,
   })}\n`;
 
-function sandbox() {
+function sandbox(): string {
   const dir = mkdtempSync(join(tmpdir(), "trace-store-"));
   mkdirSync(traceDir(dir), { recursive: true });
   return dir;
 }
 
 /** Everything the data directory looks like: names, sizes, mtimes. */
-function snapshot(dir) {
-  const out = [];
-  const walk = (at, prefix) => {
+function snapshot(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (at: string, prefix: string): void => {
     for (const entry of readdirSync(at, { withFileTypes: true }).sort((a, b) =>
       a.name < b.name ? -1 : 1,
     )) {

@@ -5,24 +5,147 @@
 // midnight. The eleven days before them are the quiet background. Used by the tests and for
 // the screenshots.
 //
-//   node test/fixture.mjs /tmp/iva-data                   # writes /tmp/iva-data/trace/*.jsonl
-//   node test/fixture.mjs /tmp/iva-data --now 2026-08-17T18:40:00
-//   node test/fixture.mjs /tmp/iva-big --busy 240         # a big journal for a load test
+//   node test/fixture.ts /tmp/iva-data                    # writes /tmp/iva-data/trace/*.jsonl
+//   node test/fixture.ts /tmp/iva-data --now 2026-08-17T18:40:00
+//   node test/fixture.ts /tmp/iva-big --busy 240          # a big journal for a load test
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { traceDir } from "../sh.iva/services/viewer/store.mjs";
+import { traceDir } from "../sh.iva/services/viewer/store.ts";
 
-const pad = (n) => String(n).padStart(2, "0");
-const dayName = (at) => {
+/** The journal as it is written: day name to the lines of that day's file. */
+export type Files = Map<string, string[]>;
+
+/** One line, in the words of the writer: the seven fields of the contract. */
+interface Emit {
+  kind: string;
+  name: string;
+  turn?: string;
+  session?: string;
+  source?: string;
+  data?: Record<string, unknown>;
+}
+
+/** The shapes a real chat turn takes. */
+type Shape = "plain" | "flagged" | "blocked" | "failed" | "cancelled" | "live";
+
+/** What a memory_search brings back. */
+interface SearchResult {
+  count: number;
+  engine: string;
+  hits: { file: string; title: string; score: number; snippet: string }[];
+}
+
+/** One tool call of a scripted step. A call either returns a result or fails. */
+interface Call {
+  tool: string;
+  args: Record<string, unknown>;
+  ms?: number;
+  result?: unknown;
+  error?: string;
+  trimmed?: boolean;
+  planner?: PlannerSpec;
+}
+
+interface Step {
+  calls: Call[];
+  thinkMs?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+}
+
+/** One chat turn to script, from the update to the answer. */
+interface ChatSpec {
+  messageId: number;
+  turnId: string;
+  session: string;
+  text: string;
+  reply: string;
+  chatId?: number;
+  userId?: number;
+  steps?: Step[];
+  shape?: Shape;
+  reasoning?: string;
+}
+
+interface PlannerSpec {
+  childSessionId: string;
+  query: string;
+  output: string;
+}
+
+/** The planner subagent inside a turn: the spec plus where it hangs. */
+interface PlannerCall extends PlannerSpec {
+  turnId: string;
+  session: string;
+  callId: string;
+}
+
+/** One night turn to script: a Rollup, a digest or a cron run. */
+interface NightSpec {
+  session: string;
+  source: string;
+  cards: string[];
+  summary: string;
+  turnId?: string;
+}
+
+/** What a scripted chat turn is meant to look like once a reader stitches it back. */
+interface ChatPlan {
+  id: string;
+  updateKey: string;
+  turnId: string;
+  session: string;
+  shape: Shape;
+  status: string;
+  tools: string[];
+  toolErrors: number;
+  subagents: number;
+  steps: number;
+  cardsFound: number;
+  cardsWritten: number;
+}
+
+/** The same for a night turn, which has a source instead of an update key. */
+interface NightPlan {
+  id: string;
+  session: string;
+  source: string;
+  turnId: string;
+  status: string;
+  tools: string[];
+  toolErrors: number;
+  subagents: number;
+  cardsWritten: number;
+  cardsFound: number;
+  steps: number;
+}
+
+/** Everything that was scripted, chat turns and night turns apart. */
+export interface Plan {
+  chat: ChatPlan[];
+  night: NightPlan[];
+}
+
+/** How big a journal to write on top of the scripted days. */
+interface Options {
+  busy?: number;
+}
+
+const pad = (n: number): string => String(n).padStart(2, "0");
+const dayName = (at: number): string => {
   const d = new Date(at);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
 /** Writer of one scripted turn: keeps the clock and appends lines to the right day. */
 class Script {
-  constructor(files) {
+  files: Files;
+  at: number;
+  plan: Plan;
+
+  constructor(files: Files) {
     this.files = files;
     this.at = 0;
     // What was scripted, in the writer's own words: the tests read the journal back and
@@ -30,24 +153,24 @@ class Script {
     this.plan = { chat: [], night: [] };
   }
 
-  set(at) {
+  set(at: number): void {
     this.at = at;
   }
 
-  wait(ms) {
+  wait(ms: number): void {
     this.at += ms;
   }
 
-  push(line) {
+  push(line: string): void {
     const day = dayName(this.at);
     const bucket = this.files.get(day) ?? [];
     bucket.push(line);
     this.files.set(day, bucket);
   }
 
-  emit(event) {
+  emit(event: Emit): void {
     const { kind, name, turn = "", session = "", source = "telegram", data = {} } = event;
-    const sizes = {};
+    const sizes: Record<string, number> = {};
     for (const [key, value] of Object.entries(data))
       if (typeof value === "string" && CONTENT_KEYS.has(key)) sizes[`${key}Chars`] = value.length;
     this.push(
@@ -63,14 +186,14 @@ class Script {
     );
   }
 
-  raw(text) {
+  raw(text: string): void {
     this.push(text);
   }
 }
 
 const CONTENT_KEYS = new Set(["text", "message", "reasoning", "result", "error", "output", "input", "details"]);
 
-const usage = (i, o) => ({
+const usage = (i: number, o: number) => ({
   in: i,
   out: o,
   cacheRead: i * 6 + 400,
@@ -84,7 +207,7 @@ const PLANNER_CARDS = 4;
 /** How many cards a night turn reads before it starts writing. */
 const NIGHT_CARDS = 6;
 
-const STATUS_OF = {
+const STATUS_OF: Record<Shape, string> = {
   plain: "ok",
   flagged: "ok",
   blocked: "blocked",
@@ -98,9 +221,9 @@ const STATUS_OF = {
  * the outcome, the tools that were called, the steps that completed, the cards. Derived from
  * the spec, never from the reader.
  */
-function planOfChat(spec) {
+function planOfChat(spec: ChatSpec): ChatPlan {
   const { chatId = 88123456, messageId, turnId, session, shape = "plain", steps = [] } = spec;
-  const tools = [];
+  const tools: string[] = [];
   let cardsFound = 0;
   let cardsWritten = 0;
   let subagents = 0;
@@ -111,8 +234,7 @@ function planOfChat(spec) {
     for (const call of step.calls) {
       tools.push(call.tool);
       if (call.error !== undefined) toolErrors += 1;
-      else if (call.tool === "memory_search" && typeof call.result?.count === "number")
-        cardsFound += call.result.count;
+      else if (call.tool === "memory_search") cardsFound += cardsOf(call.result);
       if (call.tool === "write_card") cardsWritten += 1;
       if (call.tool === "tasks" && call.planner !== undefined) {
         subagents += 1;
@@ -139,12 +261,18 @@ function planOfChat(spec) {
   };
 }
 
-const searchResult = (count, files) => ({
+/** How many cards a scripted result carries. A result without a count carries none. */
+const cardsOf = (result: unknown): number => {
+  const count = (result as SearchResult | undefined)?.count;
+  return typeof count === "number" ? count : 0;
+};
+
+const searchResult = (count: number, files: string[]): SearchResult => ({
   count,
   engine: "fts5+graph",
   hits: files.map((file, i) => ({
     file,
-    title: file.split("/").pop().replace(/\.md$/u, ""),
+    title: (file.split("/").pop() ?? "").replace(/\.md$/u, ""),
     score: Number((0.92 - i * 0.11).toFixed(2)),
     snippet: "…",
   })),
@@ -159,7 +287,7 @@ const QUIET = [
   { ask: "Что в MOC поменялось за неделю?", reply: "Две новые темы и один разрыв связей." },
 ];
 
-const QUIET_CALL = [
+const QUIET_CALL: Call[] = [
   {
     tool: "memory_search",
     args: { query: "что решили" },
@@ -181,7 +309,7 @@ const QUIET_CALL = [
  * `shape` picks which of the real-life shapes it takes: blocked, failed, subagent, trimmed,
  * live, cancelled or plain.
  */
-function chatTurn(script, spec) {
+function chatTurn(script: Script, spec: ChatSpec): void {
   const {
     chatId = 88123456,
     messageId,
@@ -347,7 +475,7 @@ function chatTurn(script, spec) {
     step.calls.forEach((call, i) => {
       script.wait(call.ms ?? 320);
       const failed = call.error !== undefined;
-      const data = {
+      const data: Record<string, unknown> = {
         sequence: 1,
         stepIndex,
         status: failed ? "error" : "ok",
@@ -513,7 +641,10 @@ function chatTurn(script, spec) {
 }
 
 /** The planner subagent: its own steps under the parent turn key with a `#planner` suffix. */
-function planner(script, { turnId, session, callId, childSessionId, query, output }) {
+function planner(
+  script: Script,
+  { turnId, session, callId, childSessionId, query, output }: PlannerCall,
+): void {
   const sub = `${turnId}#planner`;
   const common = { subagent: "planner", parentCallId: callId };
   script.emit({
@@ -597,7 +728,10 @@ function planner(script, { turnId, session, callId, childSessionId, query, outpu
  * session and a source. One session can run several turns: the digest sends twice, a Rollup
  * lives across two nights. `turnId` is what tells them apart.
  */
-function nightTurn(script, { session, source, cards, summary, turnId = "turn_0" }) {
+function nightTurn(
+  script: Script,
+  { session, source, cards, summary, turnId = "turn_0" }: NightSpec,
+): void {
   script.plan.night.push({
     id: `s:${session}|${turnId}`,
     session,
@@ -740,7 +874,7 @@ function nightTurn(script, { session, source, cards, summary, turnId = "turn_0" 
   });
 }
 
-const at = (base, dayBack, hh, mm, ss = 0) => {
+const at = (base: number, dayBack: number, hh: number, mm: number, ss = 0): number => {
   const d = new Date(base);
   d.setDate(d.getDate() - dayBack);
   d.setHours(hh, mm, ss, 0);
@@ -753,8 +887,11 @@ const at = (base, dayBack, hh, mm, ss = 0) => {
  * hand, every shape a real day has; the eleven before them are the quiet background that makes
  * the periods differ, and `busy` adds plain turns on top of each of them for a load test.
  */
-export function fixtureJournal(now = Date.now(), { busy = 0 } = {}) {
-  const files = new Map();
+export function fixtureJournal(
+  now = Date.now(),
+  { busy = 0 }: Options = {},
+): { files: Files; plan: Plan } {
+  const files: Files = new Map();
   const script = new Script(files);
 
   // ── the eleven quiet days before, oldest first ──────────────────────────────────
@@ -1139,19 +1276,23 @@ export function fixtureJournal(now = Date.now(), { busy = 0 } = {}) {
 }
 
 /** The journal alone, as day name to lines. */
-export const fixtureFiles = (now = Date.now(), options = {}) =>
+export const fixtureFiles = (now = Date.now(), options: Options = {}): Files =>
   fixtureJournal(now, options).files;
 
 /** What the fixture scripted: the turns a reader must find, in the writer's own words. */
-export const fixturePlan = (now = Date.now(), options = {}) =>
+export const fixturePlan = (now = Date.now(), options: Options = {}): Plan =>
   fixtureJournal(now, options).plan;
 
 /** Writes the fixture into `<dataDir>/trace/`. Returns the files it wrote. */
-export function writeFixture(dataDir, now = Date.now(), options = {}) {
+export function writeFixture(
+  dataDir: string,
+  now = Date.now(),
+  options: Options = {},
+): { dir: string; files: { path: string; lines: number }[] } {
   const dir = traceDir(dataDir);
   mkdirSync(dir, { recursive: true });
   const files = fixtureFiles(now, options);
-  const written = [];
+  const written: { path: string; lines: number }[] = [];
   for (const [day, lines] of files) {
     const path = join(dir, `${day}.jsonl`);
     writeFileSync(path, `${lines.join("\n")}\n`, "utf8");
@@ -1161,9 +1302,9 @@ export function writeFixture(dataDir, now = Date.now(), options = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const target = process.argv[2];
+  const target: string | undefined = process.argv[2];
   if (target === undefined) {
-    process.stderr.write("usage: node fixture.mjs <dataDir> [--now ISO] [--busy N]\n");
+    process.stderr.write("usage: node fixture.ts <dataDir> [--now ISO] [--busy N]\n");
     process.exit(2);
   }
   const flag = process.argv.indexOf("--now");
