@@ -12,7 +12,7 @@ hello/
     tsconfig.json                required — eve emits declarations with tsc, and tsc needs one here
     extension/extension.ts       the extension handle: defineExtension()
     extension/tools/hello.ts     the tool; the file name is the tool name
-  test/build.test.mjs            the build check: the real eve builds the folder
+  test/build.test.ts             the build check: the real eve builds the folder
 ```
 
 ## What it shows
@@ -41,7 +41,7 @@ Then ask Iva to say hello to somebody. `iva plugin list` shows it as installed a
 ## The build check
 
 ```bash
-IVA_REPO=~/dev/my/assistant node --test test/build.test.mjs
+IVA_REPO=~/dev/my/assistant node --test test/build.test.ts
 ```
 
 `IVA_REPO` is an Iva checkout with `node_modules`: a plugin is built by the eve of the

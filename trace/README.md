@@ -28,7 +28,7 @@ open http://127.0.0.1:8726
 
 ```bash
 cd sh.iva/services/viewer
-IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/path/to/iva/data node server.mjs
+IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/path/to/iva/data node server.ts
 ```
 
 Env, as the service contract defines it: `IVA_SERVICE_PORT` (loopback only), `IVA_DATA_DIR`
@@ -81,10 +81,10 @@ changes nothing re-reads and re-stitches nothing. On a journal of 69k lines the 
 ## Develop
 
 ```bash
-node test/fixture.mjs /tmp/iva-data              # fourteen realistic days of journal
-node test/fixture.mjs /tmp/iva-big --busy 370    # ~70k lines, for a load test
-IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/tmp/iva-data node sh.iva/services/viewer/server.mjs
-node --test test/*.test.mjs                      # 35 cases, no dependencies
+node test/fixture.ts /tmp/iva-data               # fourteen realistic days of journal
+node test/fixture.ts /tmp/iva-big --busy 370     # ~70k lines, for a load test
+IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/tmp/iva-data node sh.iva/services/viewer/server.ts
+node --test test/*.test.ts                       # 35 cases, no dependencies
 ```
 
 The fixture also says what it scripted, and the tests compare that plan with what the reader

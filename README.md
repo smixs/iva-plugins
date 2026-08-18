@@ -64,4 +64,24 @@ Steps:
    `source` that names a folder of this repository is for plugins that live here; your own
    repository is `{ "source": "url", "url": "https://github.com/owner/repo" }`.
 
+## Conventions
+
+The plugins in this repository are TypeScript, and Node 24 runs the files as they are: no build
+step, no bundler, and no dependencies unless a plugin declares them itself. Type stripping only
+erases, so the code keeps to what erases — no `enum`, no `namespace`, no fields declared in the
+constructor — and a relative import names the file it means, `./store.ts`. The `tsconfig.json`
+at the root is for the editor and for `--noEmit` alone, and the `package.json` beside it names
+the module format and nothing else; the types of the runtime come from an Iva checkout, because
+a plugin repository installs nothing of its own:
+
+```bash
+IVA_REPO=~/dev/my/assistant
+$IVA_REPO/node_modules/.bin/tsgo --noEmit -p tsconfig.json --typeRoots $IVA_REPO/node_modules/@types
+```
+
+The viewer page of `trace` is one HTML file on purpose (ADR-0010): a page that needs a build is
+a page nobody can read in the folder it ships in. None of this binds anybody else — a plugin
+service is any command at all, and the whole contract between Iva and it is `service.json` plus
+the environment (`IVA_SERVICE_PORT`, `IVA_DATA_DIR`, `PLUGIN_ROOT`, `PLUGIN_DATA`).
+
 Russian: [README.ru.md](./README.ru.md).

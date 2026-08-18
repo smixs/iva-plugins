@@ -70,7 +70,7 @@ is a file, not a service.
 Run it by hand (no rails, no systemd):
 
 ```bash
-IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/path/to/data node server.mjs
+IVA_SERVICE_PORT=8726 IVA_DATA_DIR=/path/to/data node server.ts
 ```
 
 ## The content toggle
