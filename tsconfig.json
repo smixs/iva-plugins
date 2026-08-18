@@ -1,0 +1,24 @@
+{
+  // Editor and typecheck only: nothing is ever emitted. The plugins in this repository are
+  // TypeScript that Node runs as it is, so every option here describes what Node already does
+  // — ES modules, `.ts` in the import, and no syntax that a type stripper cannot erase.
+  //
+  //   IVA_REPO=~/dev/my/assistant
+  //   $IVA_REPO/node_modules/.bin/tsgo --noEmit -p tsconfig.json \
+  //     --typeRoots $IVA_REPO/node_modules/@types
+  //
+  // `@types/node` comes from the Iva checkout: a plugin repository declares no dependencies
+  // of its own, and the types of the runtime are the ones of the installation that runs it.
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "target": "es2022",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["trace/**/*.ts", "hello/test/**/*.ts"]
+}
