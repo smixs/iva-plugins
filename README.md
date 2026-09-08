@@ -7,10 +7,11 @@ Codex, so other clients can read it too (ADR-0009).
 
 ## What is on the list
 
-| Plugin              | What it is                                                                                                                |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [trace](./trace)    | Viewer for the turn journal: the schema of Iva with the path of a turn lit across it, the turn feed and a replay.          |
-| [hello](./hello)    | The demo for authors: the smallest plugin that carries code — one skill, one tool.                                         |
+| Plugin                                                  | What it is                                                                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [trace](./trace)                                        | Viewer for the turn journal: the schema of Iva with the path of a turn lit across it, the turn feed and a replay.        |
+| [hello](./hello)                                        | The demo for authors: the smallest plugin that carries code — one skill, one tool.                                       |
+| [bitrix24-read](https://github.com/mamysh/iva-bitrix24) | Read-only Bitrix24 task integration with bounded discussions, projects, people, attachments and owner-confirmed updates. |
 
 ## Add one to your Iva
 

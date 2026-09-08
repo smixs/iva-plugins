@@ -10,6 +10,16 @@
       "name": "hello",
       "source": "./hello",
       "description": "The demo for plugin authors: the smallest plugin that carries code - one skill, one tool."
+    },
+    {
+      "name": "bitrix24-read",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/mamysh/iva-bitrix24.git",
+        "path": "plugin",
+        "ref": "stable"
+      },
+      "description": "Bounded Bitrix24 task, discussion, project, people and attachment reading for Iva."
     }
   ]
 }
