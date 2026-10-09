@@ -10,6 +10,12 @@
       "name": "hello",
       "source": "./hello",
       "description": "The demo for plugin authors: the smallest plugin that carries code - one skill, one tool."
+    },
+    {
+      "name": "voice-reply",
+      "source": "url",
+      "url": "https://github.com/Entset/iva-voice-reply",
+      "description": "Voice replies in Telegram: paid OpenRouter TTS (Grok, Gemini) or a free local engine (Silero v5 on the server), engine and voice chosen at install."
     }
   ]
 }
