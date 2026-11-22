@@ -1,0 +1,54 @@
+name: Submit a plugin
+description: Offer a plugin for the list without a fork; the maintainer writes the entry.
+title: "Plugin: "
+labels: ["plugin"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The steps are in [PUBLISH.md](https://github.com/smixs/iva-plugins/blob/main/PUBLISH.md) ([по-русски](https://github.com/smixs/iva-plugins/blob/main/PUBLISH.ru.md)). A pull request with the entry is reviewed sooner.
+  - type: input
+    id: repository
+    attributes:
+      label: Repository
+      description: The public GitHub repository of the plugin, and the subfolder when it is not at the root.
+      placeholder: https://github.com/you/iva-my-plugin
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: The full sha to list. Empty means the head of the default branch today.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options: ["Voice", "Services and shopping", "Tools", "For plugin authors", "Another one"]
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What it does
+      description: Two or three sentences for a person, in English or in Russian.
+    validations:
+      required: true
+  - type: textarea
+    id: runs
+    attributes:
+      label: What it starts on the machine
+      description: Skills only, code inside the agent's process, a service, an MCP server, a script that asks for sudo. The keys it reads and the hosts it connects to.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: It installs with `iva plugin add <owner>/<repo>` on a machine that has not seen the folder.
+          required: true
+        - label: The repository has no keys, tokens or personal data, and it has a LICENSE.
+          required: true
+        - label: The README has `## Keys` and `## Network`.
+          required: true

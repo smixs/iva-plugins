@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "yandex-taxi",
+  "version": "1.1.0",
+  "description": "Orders Yandex Taxi through a browser: price quote, order, car tracking. No order without the owner's explicit yes."
+}

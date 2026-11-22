@@ -1,6 +1,6 @@
 ---
 name: hello
-description: Greet somebody by name with the hello__hello tool of the hello plugin. Use when the owner asks to say hello to somebody, or asks to check that a plugin with code is installed and its tool reaches the model. Not for real work: this plugin is the demo authors copy.
+description: "Use when the owner asks to say hello to somebody, or to check that a code plugin's tool reaches the model: the demo."
 ---
 
 # hello — the demo tool of a code plugin

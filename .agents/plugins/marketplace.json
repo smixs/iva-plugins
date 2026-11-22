@@ -10,6 +10,39 @@
       "name": "hello",
       "source": "./hello",
       "description": "The demo for plugin authors: the smallest plugin that carries code - one skill, one tool."
+    },
+    {
+      "name": "yandex-taxi",
+      "source": "./yandex-taxi",
+      "description": "Orders Yandex Taxi through a browser: price quote, order, car tracking. No order without the owner's explicit yes."
+    },
+    {
+      "name": "voice-reply",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Entset/iva-voice-reply",
+        "sha": "6653001a5a22ab5dfc6b349405a8a32cdba42916"
+      },
+      "description": "Voice replies in Telegram: a speak button under long answers, a choice of voices, OpenRouter or a local Silero engine."
+    },
+    {
+      "name": "alice-webhook",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Entset/iva-alice",
+        "sha": "0ec7693dbcd3cb6dc37ed54fc9d8139a8417262e"
+      },
+      "description": "Yandex Alice as a voice front end: a smart speaker passes what you say to Iva and reads her answer aloud."
+    },
+    {
+      "name": "runet",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Entset/iva-runet",
+        "path": "plugin",
+        "sha": "9ef798d41711e970b20c06eeab798be9157fa839"
+      },
+      "description": "Russian sites and shops from a server abroad: a browser with a kept profile, orders at Market, WB and grocery chains, the VkusVill MCP."
     }
   ]
 }

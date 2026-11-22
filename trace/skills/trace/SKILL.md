@@ -1,6 +1,6 @@
 ---
 name: trace
-description: Read the Trace journal of a turn and open the viewer. Use when the owner asks what happened in a turn, why an answer was late or missing, what the Gate said, what the model called, how many tokens a turn cost, or asks to see or open the trace, the viewer, the turn journal, the schema, the replay. Also use before answering "why did you do that" about a past turn, and when the owner asks to turn the content of the journal off. Not for service logs (journalctl) and not for memory questions (that is the Vault).
+description: "Use when the owner asks what happened in a turn, why an answer was late, what a turn cost, or to open the trace viewer."
 ---
 
 # trace — the turn journal and its viewer
