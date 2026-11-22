@@ -8,6 +8,7 @@
   "plugins": {
     "trace": {
       "title": "Trace",
+      "tagline": { "en": "Shows what Iva did in a turn, step by step", "ru": "Показывает, что Ива делала, шаг за шагом" },
       "category": "tools",
       "author": { "name": "Sergey Shima", "github": "smixs" },
       "repository": "https://github.com/smixs/iva-plugins/tree/main/trace",
@@ -25,6 +26,7 @@
     },
     "hello": {
       "title": "Hello",
+      "tagline": { "en": "A sample plugin with code", "ru": "Образец плагина с кодом" },
       "category": "authors",
       "author": { "name": "Sergey Shima", "github": "smixs" },
       "repository": "https://github.com/smixs/iva-plugins/tree/main/hello",
@@ -42,6 +44,7 @@
     },
     "yandex-taxi": {
       "title": "Yandex Taxi",
+      "tagline": { "en": "Orders Yandex Taxi", "ru": "Заказывает Яндекс Такси" },
       "category": "services",
       "author": { "name": "Sergey Shima", "github": "smixs" },
       "repository": "https://github.com/smixs/yandex-taxi-skill",
@@ -59,6 +62,7 @@
     },
     "voice-reply": {
       "title": "Voice Reply",
+      "tagline": { "en": "Answers with voice", "ru": "Отвечает голосом" },
       "category": "voice",
       "author": { "name": "Entset", "github": "Entset" },
       "repository": "https://github.com/Entset/iva-voice-reply",
@@ -76,6 +80,7 @@
     },
     "alice-webhook": {
       "title": "Alice",
+      "tagline": { "en": "Talks through Yandex Alice", "ru": "Говорит через Яндекс Алису" },
       "category": "voice",
       "author": { "name": "Entset", "github": "Entset" },
       "repository": "https://github.com/Entset/iva-alice",
@@ -93,6 +98,7 @@
     },
     "runet": {
       "title": "Runet",
+      "tagline": { "en": "Shops at Russian stores", "ru": "Покупает в российских магазинах" },
       "category": "services",
       "author": { "name": "Entset", "github": "Entset" },
       "repository": "https://github.com/Entset/iva-runet",

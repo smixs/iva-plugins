@@ -91,6 +91,7 @@ gh repo edit <вы>/iva-my-plugin --add-topic iva-plugin
 ```json
 "my-plugin": {
   "title": "My Plugin",
+  "tagline": { "en": "What it does, in four or five words", "ru": "Что делает, в четырёх-пяти словах" },
   "category": "tools",
   "author": { "name": "Ваше имя", "github": "<вы>" },
   "repository": "https://github.com/<вы>/iva-my-plugin",

@@ -90,6 +90,7 @@ A plugin in a subfolder is `"source": "git-subdir"` with `"path": "<folder>"` be
 ```json
 "my-plugin": {
   "title": "My Plugin",
+  "tagline": { "en": "What it does, in four or five words", "ru": "Что делает, в четырёх-пяти словах" },
   "category": "tools",
   "author": { "name": "Your Name", "github": "<you>" },
   "repository": "https://github.com/<you>/iva-my-plugin",

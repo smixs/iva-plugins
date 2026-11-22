@@ -137,6 +137,13 @@ for (const [name, raw] of Object.entries(cards)) {
     problem(where, "author is { name, github }, github being the login");
   if (!REPOSITORY.test(text(raw.repository))) problem(where, "repository is an https://github.com/ address");
   if (!DATE.test(text(raw.added))) problem(where, "added is YYYY-MM-DD");
+  // The line under the name on a card: one short phrase, no full stop.
+  const tagline = isRecord(raw.tagline) ? raw.tagline : {};
+  for (const language of ["en", "ru"]) {
+    const line = tagline[language];
+    if (!text(line) || (line as string).length > 48 || /[.!]$/.test(line as string))
+      problem(where, `tagline.${language}: one phrase of at most 48 characters, no full stop`);
+  }
   for (const field of ["summary", "runs"]) {
     const value = isRecord(raw[field]) ? raw[field] : {};
     if (!text(value.en) || !text(value.ru)) problem(where, `${field} is { en, ru }`);
